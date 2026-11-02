@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GolfNexus</title>
+  <meta name="description" content="GolfNexus — trouvez vos tournois, comparez les parcours, construisez votre saison de golf.">
+  <style>
+    :root {
+      --vert: #14532d;
+      --sauge: #9caf88;
+      --jaune: #e8d44d;
+      --fond: #f6f6f1;
+      --texte: #1c2a20;
+      --doux: #5b6b5f;
+      --carte: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --vert: #86c79a; --sauge: #6f8562; --jaune: #e8d44d;
+        --fond: #0f1712; --texte: #e6ede7; --doux: #a3b2a7; --carte: #17221b;
+      }
+    }
+    :root[data-theme="dark"] {
+      --vert: #86c79a; --sauge: #6f8562; --jaune: #e8d44d;
+      --fond: #0f1712; --texte: #e6ede7; --doux: #a3b2a7; --carte: #17221b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--fond); color: var(--texte);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column;
+    }
+    header, main, footer { width: 100%; max-width: 960px; margin: 0 auto; padding: 0 16px; }
+    header { padding-top: 24px; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; }
+    .balle { width: 14px; height: 14px; border-radius: 50%; background: var(--jaune); box-shadow: inset -2px -2px 0 rgba(0,0,0,.15); }
+    main { flex: 1; padding-top: 12vh; }
+    h1 { font-size: clamp(32px, 6vw, 56px); line-height: 1.05; margin: 0 0 16px; color: var(--vert); letter-spacing: -0.02em; }
+    p.sous { font-size: 18px; color: var(--doux); max-width: 34em; margin: 0 0 40px; }
+    .blocs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .bloc { background: var(--carte); border-radius: 12px; padding: 20px; border-top: 4px solid var(--sauge); }
+    .bloc h2 { margin: 0 0 6px; font-size: 16px; }
+    .bloc p { margin: 0; color: var(--doux); font-size: 14px; }
+    .statut { margin-top: 32px; font-size: 13px; color: var(--doux); }
+    footer { padding: 24px 16px; font-size: 12px; color: var(--doux); }
+  </style>
+</head>
+<body>
+  <header><span class="balle" aria-hidden="true"></span>GolfNexus</header>
+  <main>
+    <h1>The data behind<br>your golf season.</h1>
+    <p class="sous">Trouvez vos tournois. Comparez les parcours. Construisez votre saison.</p>
+    <div class="blocs">
+      <div class="bloc"><h2>Explorer</h2><p>Les Grands Prix sur la carte de France, par semaine, mois ou année.</p></div>
+      <div class="bloc"><h2>Analyser</h2><p>Fiches des golfs, SSS, slope et niveau des éditions précédentes.</p></div>
+      <div class="bloc"><h2>Planifier</h2><p>Votre saison, selon vos critères de distance et de niveau.</p></div>
+    </div>
+    <p class="statut" id="statut">Site en construction.</p>
+  </main>
+  <footer>Données collectées une fois par mois. Résultats historiques anonymisés.</footer>
+  <script>
+    fetch("data/meta.json").then(r => r.ok ? r.json() : null).then(m => {
+      if (m && m.date) document.getElementById("statut").textContent =
+        "Site en construction — dernière mise à jour : " + new Date(m.date).toLocaleDateString("fr-FR");
+    }).catch(() => {});
+  </script>
+</body>
+</html>
