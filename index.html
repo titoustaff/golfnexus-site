@@ -3031,6 +3031,9 @@ function rendreStats() {
     <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Cat.</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
     ${T.slice().reverse().map((t) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ")}</td><td>${sg(t.moy_sss, 2)}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
     </tbody></table></div>`);
+  // mise à jour à la demande (relevé immédiat, 1 fois par jour) ; dernière lecture du Mérite
+  if (!Saison.demo) h += `<p class="meta st-maj">Dernier relevé du Mérite : ${moisLib(der.mois)}${der.lu_le ? ` (lu le ${fmtDate(String(der.lu_le).slice(0, 10))})` : ""}.
+    Relevé automatique chaque lundi · <button type="button" class="lien" id="st-releve">${Saison.releve === "en cours" ? "relevé en cours…" : "Mettre à jour maintenant"}</button> (une fois par jour).</p>`;
   C.innerHTML = h;
   simulation(der);
 }
