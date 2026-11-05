@@ -647,6 +647,13 @@ body.lecture-seule .note { pointer-events: none; background: transparent; border
 .co-eq-onglets button[aria-selected=true] { background: var(--vert); color: #fff; border-color: var(--vert); } .co-eq-onglets button[aria-selected=true] small { background: rgba(255,255,255,.2); color: #fff; }
 .co-eq-onglets button.nouvelle { border-style: dashed; color: var(--vert-2); } .co-eq-onglets button.nouvelle[aria-selected=true] { color: #fff; }
 .co-eq-onglets select { height: 36px; min-width: 260px; border: 1px solid var(--bord); border-radius: 8px; background: var(--carte); font-weight: 600; }
+.co-deux { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 24px; margin-top: 10px; }
+.co-deux h4 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--doux); }
+.co-deux h4 small { background: var(--sauge-pale); border-radius: 999px; padding: 0 7px; margin-left: 4px; color: var(--texte); }
+.co-ligne { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--bord); border-radius: 10px; margin-bottom: 6px; }
+.co-ligne small { display: block; color: var(--doux); font-size: 12px; } .co-ligne .btn { height: 32px; padding: 0 14px; flex: none; }
+.co-ligne.co-prop { border: 1px solid var(--bord); background: none; border-radius: 10px; padding: 8px 10px; font-size: 14px; font-weight: 400; color: var(--texte); cursor: default; }
+.co-cherche { margin-bottom: 8px; }
 
 </style>
 </head>
@@ -3203,13 +3210,18 @@ async function htmlEquipes() {
     const membres = (e.equipe_joueurs || []).map((m) => m.joueur_id), dispo = ok.filter((j) => !membres.includes(j.joueur_id));
     h += `<div class="bloc co-equipe"><div class="co-eq-tete"><h3>${esc(e.nom)} <small>${membres.length} joueur${membres.length > 1 ? "s" : ""}</small></h3>
       <button type="button" class="lien" data-eq-cal="${esc(e.id)}">Calendrier</button><button type="button" class="lien" data-eq-nom="${esc(e.id)}" data-nom="${esc(e.nom)}">Renommer</button><button type="button" class="lien" data-eq-suppr="${esc(e.id)}">Supprimer</button></div>
-      <div class="co-puces">${membres.map((id) => { const j = nomDe(id); return `<span class="co-puce">${esc(j?.nom || j?.libelle || "joueur")}${j && infoJoueur(j) ? ` <small>${esc(infoJoueur(j))}</small>` : ""}
-        <button type="button" aria-label="Retirer de l'équipe" data-eq-retirer="${esc(e.id)}|${esc(id)}">×</button></span>`; }).join("") || `<span class="meta">Aucun joueur dans cette équipe.</span>`}</div>
-      ${(() => { const ok2 = dispo.filter((j) => correspondEquipe(e.nom, j)); return ok2.length
-        ? `<div class="co-ajout"><input type="search" class="co-cherche" data-eq-cherche="${esc(e.id)}" placeholder="Ajouter un joueur : nom, licence, catégorie…" aria-label="Rechercher un joueur à ajouter" autocomplete="off">
-           <div class="co-props" data-eq-props="${esc(e.id)}">${ok2.map((j) => `<button type="button" class="co-prop" data-eq-ajouter="${esc(e.id)}" data-j="${esc(j.joueur_id)}"
-             data-q="${esc(plier([j.nom, j.libelle, j.licence, j.categorie].filter(Boolean).join(" ")))}">+ ${esc(j.nom || j.libelle || j.licence)}${infoJoueur(j) ? ` <small>${esc(infoJoueur(j))}</small>` : ""}</button>`).join("")}</div></div>`
-        : `<p class="meta">Aucun autre de tes joueurs ne correspond à cette équipe (sexe, âge).</p>`; })()}</div>`;
+      <div class="co-deux">
+        <div><h4>Dans l'équipe <small>${membres.length}</small></h4>
+          ${membres.map((id) => { const j = nomDe(id); return `<div class="co-ligne"><div><b>${esc(j?.nom || j?.libelle || "joueur")}</b>${j && infoJoueur(j) ? `<small>${esc(infoJoueur(j))}</small>` : ""}</div>
+            <button type="button" class="btn" data-eq-retirer="${esc(e.id)}|${esc(id)}">Retirer</button></div>`; }).join("") || `<p class="meta">Personne pour l'instant : ajoute des joueurs avec les boutons « Ajouter ».</p>`}</div>
+        <div>${(() => { const ok2 = dispo.filter((j) => correspondEquipe(e.nom, j));
+          return `<h4>Joueurs à ajouter <small>${ok2.length}</small></h4>` + (ok2.length
+          ? (ok2.length > 6 ? `<input type="search" class="co-cherche" data-eq-cherche="${esc(e.id)}" placeholder="Filtrer : nom, licence, catégorie…" aria-label="Filtrer les joueurs" autocomplete="off">` : "")
+            + `<div data-eq-props="${esc(e.id)}">${ok2.map((j) => `<div class="co-ligne co-prop" data-q="${esc(plier([j.nom, j.libelle, j.licence, j.categorie].filter(Boolean).join(" ")))}">
+              <div><b>${esc(j.nom || j.libelle || j.licence)}</b>${infoJoueur(j) ? `<small>${esc(infoJoueur(j))}</small>` : ""}</div>
+              <button type="button" class="btn plein" data-eq-ajouter="${esc(e.id)}" data-j="${esc(j.joueur_id)}">Ajouter</button></div>`).join("")}</div>`
+          : `<p class="meta">Aucun autre de tes joueurs ne correspond à cette équipe (sexe, âge).</p>`); })()}</div>
+      </div></div>`;
   }
   return h;
 }
