@@ -654,6 +654,8 @@ body.lecture-seule .note { pointer-events: none; background: transparent; border
 .co-ligne small { display: block; color: var(--doux); font-size: 12px; } .co-ligne .btn { height: 32px; padding: 0 14px; flex: none; }
 .co-ligne.co-prop { border: 1px solid var(--bord); background: none; border-radius: 10px; padding: 8px 10px; font-size: 14px; font-weight: 400; color: var(--texte); cursor: default; }
 .co-cherche { margin-bottom: 8px; }
+.p-champs label[hidden], #p-merite-bloc[hidden], .vues button[hidden] { display: none !important; }
+.p-coche { display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer; } .p-coche input { width: 18px; height: 18px; } #p-form > .meta[hidden] { display: none; }
 
 </style>
 </head>
@@ -712,7 +714,7 @@ body.lecture-seule .note { pointer-events: none; background: transparent; border
       </div>
       <nav class="vues" aria-label="Écrans">
         <button type="button" data-ecran="tournois" aria-current="page">Tournois</button>
-        <button type="button" data-ecran="saison">Ma saison<span class="nb" id="nb-saison" hidden></span></button>
+        <button type="button" data-ecran="saison" id="v-saison">Ma saison<span class="nb" id="nb-saison" hidden></span></button>
         <button type="button" data-ecran="stats" id="v-stats" hidden>Mes stats</button>
         <button type="button" data-ecran="profil" id="v-profil" hidden>Mon profil</button>
         <button type="button" data-ecran="coach" id="v-coach" hidden>Coach</button>
@@ -876,7 +878,7 @@ body.lecture-seule .note { pointer-events: none; background: transparent; border
 
   <section id="ecran-profil" class="ecran-profil" hidden aria-labelledby="p-titre">
     <div class="s-tete"><h2 id="p-titre">Mon profil</h2></div>
-    <div class="bloc p-bloc">
+    <div class="bloc p-bloc" id="p-merite-bloc">
       <h3>Mon Mérite ffgolf</h3>
       <div id="p-merite"></div>
     </div>
@@ -2011,7 +2013,8 @@ const compte = { envoye: null, ouvert: false, parLien: false, mdp: false, email:
 const LIEN_REGLES = "Le lien est <b>à usage unique</b>, valable <b>1 heure</b>, et ne fonctionne que <b>dans ce navigateur</b> (celui où tu l'as demandé).";
 function rendreCompte() {
   const b = $("b-compte"), pan = $("b-pan"), c = $("s-compte"), connecte = Saison.mode === "compte" && !!sb;
-  $("v-profil").hidden = !connecte; $("v-stats").hidden = !connecte;
+  $("v-profil").hidden = !connecte; $("v-stats").hidden = !connecte || coachSeul(); $("v-saison").hidden = connecte && coachSeul();
+  if (connecte && coachSeul() && (etat.ecran === "saison" || etat.ecran === "stats")) setTimeout(() => ecran("coach"), 0);
   $("v-admin").hidden = !(connecte && Saison.role === "admin" && !Saison.demo);
   $("v-coach").hidden = !(connecte && (Saison.role === "coach" || Saison.role === "admin") && (!Saison.demo || Saison.demo.coach));
   document.body.classList.toggle("lecture-seule", !!Saison.demo);   // vue coach : boutons de modification masqués
@@ -2457,6 +2460,14 @@ const rech2 = { resultats: null, en_cours: false, erreur: "" };
 function rendreProfil() {
   rendreAcces();
   const f = Saison.fiche, m = f.merite;
+  { // coach qui ne joue pas : seulement nom, club, domicile
+    const seul = coachSeul();
+    $("p-merite-bloc").hidden = seul;
+    for (const id of ["p-licence-lib", "p-sexe", "p-naissance", "p-index", "p-moy", "p-circuit"]) { const el = $(id); const l = el && (el.id === "p-licence-lib" ? el : el.closest("label")); if (l) l.hidden = seul; }
+    $("p-titre").textContent = seul ? "Mon profil (coach)" : "Mon profil";
+    const t3 = $("p-form").querySelector("h3"); if (t3) t3.textContent = seul ? "Mes informations" : "Ma fiche joueur";
+    const fin = $("p-form").querySelector(":scope > .meta"); if (fin) fin.hidden = seul;
+  }
   const an = new Date().getFullYear();
   $("p-merite").innerHTML = m ? `
     <div class="p-carte">
@@ -2487,7 +2498,7 @@ function rendreProfil() {
   v("p-moy", f.moy == null ? "" : signe(f.moy)); v("p-dist", f.distMax);
   { // licence : compte seulement ; changement 1 fois / 30 jours (imposé par la base)
     const lic = Saison.licence || {}, compteOk = Saison.mode === "compte";
-    $("p-licence-lib").hidden = !compteOk;
+    $("p-licence-lib").hidden = !compteOk || coachSeul();
     if (compteOk) {
       v("p-licence", lic.num);
       const libre = lic.le ? new Date(new Date(lic.le).getTime() + 30 * 864e5) : null, bloque = lic.num && libre && libre > new Date();
@@ -3013,6 +3024,8 @@ $("a-lien").addEventListener("click", async () => {
 // ------------------------------------------------------------------ coachs, joueurs, administration (05/11)
 // Coach : DEMANDE l'accès à un joueur par sa licence ; le joueur (ou son parent pour un mineur) ACCEPTE.
 // Ensuite le coach choisit le joueur dans « Vue » (bandeau) : sa saison et ses stats en lecture seule.
+// coach qui ne joue pas (cas par défaut d'un coach) : pas de Mérite, de saison ni de stats pour son propre compte
+const coachSeul = () => (Saison.role === "coach" || Saison.role === "admin") && !Saison.demo && !(Saison.fiche || {}).joueAussi;
 const STRUCTURES = { club: "club", ligue: "ligue", academie: "académie", pole: "pôle / comité", independant: "coach indépendant" };
 function selecteurVue() {
   const J = Saison.joueurs || [];
@@ -3054,14 +3067,17 @@ async function rendreAcces() {
   const box = $("p-acces"); if (!box) return;
   if (Saison.mode !== "compte" || Saison.demo) { box.innerHTML = ""; return; }
   let h = "";
+  if (Saison.role === "coach" || Saison.role === "admin") h += `<div class="bloc p-bloc"><label class="p-coche"><input type="checkbox" id="p-joue-aussi" ${(Saison.fiche || {}).joueAussi ? "checked" : ""}>
+    <b>Je joue aussi en compétition</b></label>
+    <p class="meta">Coché : ta fiche Mérite, ta saison et tes stats de joueur. Décoché : seulement ton espace coach (un coach pro n'a pas de Mérite amateur).</p></div>`;
   if (Saison.mineur && !Saison.parentValide) h += `<div class="bloc p-bloc p-parent"><h3>Compte d'un joueur de moins de 18 ans</h3>
     <p>Ce compte est celui du <b>parent ou représentant légal</b>. C'est toi qui décides qui peut suivre le joueur (coachs).</p>
     <label><input type="checkbox" id="p-parent-ok"> Je suis le parent ou le représentant légal de ce joueur et j'accepte que ses données de golf (saison, résultats, Mérite) soient enregistrées dans GolfNexus.</label>
     <button type="button" class="btn plein" id="p-parent-valider">Valider</button></div>`;
-  const C = await sb.rpc("mes_coachs");
+  const C = coachSeul() ? { data: [] } : await sb.rpc("mes_coachs");
   const lib = { demande: "en attente", accepte: "accès accordé", refuse: "refusé" };
   const coachs = C.data || [];
-  h += `<div class="bloc p-bloc"><h3>Coachs qui suivent ce joueur</h3>
+  if (!coachSeul()) h += `<div class="bloc p-bloc"><h3>Coachs qui suivent ce joueur</h3>
     ${coachs.length ? coachs.map((c) => `<div class="acces-ligne"><div class="qui"><b>${esc(c.nom || "")}</b>${c.structure_nom ? ` · <span class="structure">${esc(c.structure_nom)} <i>(${esc(STRUCTURES[c.structure_type] || "")})</i></span>` : ` · <span class="structure">structure non renseignée</span>`}<small>${esc(c.email || "")} · demandé le ${fmtDate(String(c.demande_le).slice(0, 10))}</small></div>
       <span class="statut-acces ${c.statut}">${lib[c.statut]}</span>
       ${c.statut !== "accepte" ? `<button type="button" class="btn plein" data-acces-ok="${esc(c.coach_id)}">Accepter</button>` : ""}
@@ -3118,6 +3134,10 @@ async function envoiAcces(e) {
 // les deux écrans partagent les mêmes boutons et formulaires
 const rafraichirAcces = () => (etat.ecran === "coach" ? rendreCoach() : rendreAcces());
 for (const id of ["p-acces", "co-contenu"]) { $(id).addEventListener("click", clicAcces); $(id).addEventListener("submit", envoiAcces); }
+$("p-acces").addEventListener("change", (e) => {
+  if (e.target.id !== "p-joue-aussi") return;
+  Saison.setFiche({ joueAussi: e.target.checked }); rendreCompte(); rendreProfil();
+});
 
 // ---- onglet Coach (coachs et administrateur) : structure, joueurs suivis, invitations ; plus tard les équipes
 const co = { onglet: "joueurs", equipe: "", eqSel: "", annee: new Date().getFullYear() };
