@@ -759,6 +759,20 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
 .bv-etapes li.ok .bv-coche { background: var(--vert-2); color: #fff; }
 .bv-etapes .btn { height: 32px; padding: 0 12px; flex: none; }
 .bienvenue > .meta { margin: 10px 0 0; }
+/* ---------------------------------------------------------------- assistant de démarrage (plein écran, étapes) */
+.assistant { position: fixed; inset: 0; z-index: 4000; background: rgba(20, 40, 28, .72); display: grid; place-items: center; padding: 16px; overflow-y: auto; }
+.assistant[hidden] { display: none; }
+body.assistant-ouvert { overflow: hidden; }
+.as-carte { background: var(--carte); color: var(--texte); width: min(520px, 100%); border-radius: 18px; padding: 22px; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+.as-etape { font-size: 12px; font-weight: 700; color: var(--doux); text-transform: uppercase; letter-spacing: .05em; }
+.as-carte .bv-barre { margin: 6px 0 16px; }
+.as-carte h2 { margin: 0 0 8px; font-size: 21px; color: var(--vert); } .as-carte p { margin: 0 0 12px; line-height: 1.5; }
+.as-carte form > input, .as-carte form > select, .as-ligne input, .as-ligne select { width: 100%; box-sizing: border-box; height: 44px; border: 1px solid var(--bord); border-radius: 10px; background: var(--fond); padding: 0 12px; font-size: 15px; margin-bottom: 10px; }
+.as-ligne { display: flex; gap: 8px; } .as-ligne select { width: 130px; flex: none; }
+.as-coche { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.5; margin: 6px 0 14px; } .as-coche input { width: 20px; height: 20px; flex: none; margin-top: 2px; }
+.as-pied { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; } .as-pied .btn { height: 42px; padding: 0 20px; font-size: 15px; }
+#as-res { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; margin-bottom: 6px; }
+#as-res .p-res { text-align: left; }
 
 </style>
 </head>
@@ -1025,6 +1039,7 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
+  <div id="assistant" class="assistant" role="dialog" aria-modal="true" aria-label="Bien démarrer" hidden><div class="as-carte" id="as-carte"></div></div>
   <div id="toast" class="toast" role="status" hidden></div>
   <script>
 "use strict";
@@ -2193,12 +2208,13 @@ $("b-pan").addEventListener("submit", async (e) => {
     if (f.id === "c-form-nouveau") {
       const { error } = await sb.auth.updateUser({ password: $("c-nouveau").value });
       if (error) throw error;
-      compte.mdp = false; compte.viaLien = false; compte.ouvert = false; rendreCompte();
+      compte.mdp = false; compte.viaLien = false; compte.ouvert = false; rendreCompte(); Saison.setFiche({ mdpChoisi: true });
       signaler("Mot de passe enregistré : tu te connectes désormais avec ton e-mail et ce mot de passe.");
       return;
     }
     const email = $("c-email").value.trim().toLowerCase(); compte.email = email;
     if (f.id === "c-form-mdp") {
+      etat.mdpConnu = true;
       const { error } = await sb.auth.signInWithPassword({ email, password: $("c-mdp-in").value });
       if (error) throw error;
       compte.ouvert = false;   // la suite (chargement du compte) passe par onAuthStateChange
@@ -2263,12 +2279,10 @@ function initCompte() {
     history.replaceState(null, "", location.pathname + (q.toString() ? "?" + q : "") + (h.toString() ? "#" + h : ""));
   }
   sb.auth.onAuthStateChange((ev, session) => setTimeout(async () => {   // pas d'appel Supabase dans le rappel lui-même
+    // arrivé par un lien (invitation, lien de connexion) : l'assistant demandera un mot de passe
+    if ((venuDuLien || etat.invite) && session && ev === "INITIAL_SESSION") etat.demandeMdp = true;
     await majSession(session);
-    if ((venuDuLien || etat.invite) && session && ev === "INITIAL_SESSION") {
-      ecran("saison");
-      // connecté par lien → proposer tout de suite un mot de passe (sinon il faut un e-mail à chaque connexion)
-      Object.assign(compte, { viaLien: true, mdp: true, ouvert: true }); rendreCompte(); setTimeout(() => $("c-nouveau")?.focus(), 0);
-    }
+    if (session && Saison.mode === "compte" && !Saison.demo) ouvrirAssistant();
     if (venuDuLien) { const q = new URLSearchParams(location.search); q.delete("code");
       history.replaceState(null, "", location.pathname + (q.toString() ? "?" + q : "") + location.hash); }
   }, 0));
@@ -2585,7 +2599,7 @@ function rendreProfil() {
     <div class="p-carte">
       <div class="p-nom"><b>${esc(m.prenom || "")} ${esc(m.nom || "")}</b><span>${esc(titre(m.golf || ""))}</span></div>
       <div class="p-chiffres">
-        <div><b>${m.place ?? "—"}<small>e</small></b><span>au Mérite${m.placePrec ? ` (${m.placePrec}<small>e</small> le mois d'avant)` : ""}${m.meilleure ? ` · meilleure : ${m.meilleure}<small>e</small>` : ""}</span></div>
+        <div><b>${m.place != null ? `${m.place}<small>e</small>` : "NC"}</b><span>${m.place == null ? "non classé ce mois · " : ""}au Mérite${m.placePrec ? ` (${m.placePrec}<small>e</small> le mois d'avant)` : ""}${m.meilleure ? ` · meilleure : ${m.meilleure}<small>e</small>` : ""}</span></div>
         <div><b>${signe(m.moy)}</b><span>moyenne vs SSS (12 mois)</span></div>
         <div><b>${signe(m.moy6)}</b><span>moyenne vs SSS (6 mois)</span></div>
         <div><b>${m.index != null ? m.index.toLocaleString("fr-FR") : "—"}</b><span>index</span></div>
@@ -2602,7 +2616,7 @@ function rendreProfil() {
     </form>
     <div id="p-resultats" class="p-resultats">${rech2.en_cours ? "<p>Lecture du Mérite (≈ 2,5 Mo)…</p>" : rech2.erreur ? `<p>${esc(rech2.erreur)}</p>` :
       rech2.resultats ? (rech2.resultats.length ? rech2.resultats.map((x, i) => `<button type="button" class="p-res" data-i="${i}">
-        <b>${esc(x.NOM)} ${esc(x.PRENOM)}</b><span>${esc(x.CATEGORIE || "")} · ${esc(titre(x.GOLF || ""))} · ${x.RANK}e · moyenne ${signe(nombre(x.MOY_SSS))}</span></button>`).join("")
+        <b>${esc(x.NOM)} ${esc(x.PRENOM)}</b><span>${esc(x.CATEGORIE || "")} · ${esc(titre(x.GOLF || ""))} · ${/^\d+$/.test(String(x.RANK)) ? x.RANK + "e" : "non classé"} · moyenne ${signe(nombre(x.MOY_SSS))}</span></button>`).join("")
         : "<p>Personne de ce nom au Mérite de ce mois. Seuls les joueurs classés y figurent : remplis ta moyenne à la main ci-dessous.</p>") : ""}</div>`;
   // champs saisis
   const v = (id, x) => { const el = $(id); if (document.activeElement !== el) el.value = x ?? ""; };
@@ -3142,6 +3156,7 @@ $("a-form").addEventListener("submit", async (e) => {
   const email = $("a-email").value.trim().toLowerCase(), mdp = $("a-mdp").value;
   if (!mdp) { msgAccueil("Saisis ton mot de passe, ou reçois un lien par e-mail.", true); $("a-mdp").focus(); return; }
   $("a-ok").disabled = true; msgAccueil("Connexion…");
+  etat.mdpConnu = true;
   const { error } = await sb.auth.signInWithPassword({ email, password: mdp });
   $("a-ok").disabled = false;
   if (error) msgAccueil(/invalid login/i.test(error.message) ? "E-mail ou mot de passe incorrect." : "Connexion impossible : " + error.message, true);
@@ -3704,6 +3719,126 @@ $("bienvenue").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.id === "bv-masquer") { Saison.setFiche({ accueilFini: true }); rendreBienvenue(); return; }
   if (b.dataset.bvGo) { ecran(b.dataset.bvGo); const f = b.dataset.bvFocus && $(b.dataset.bvFocus); if (f) setTimeout(() => { f.scrollIntoView({ block: "center" }); f.focus(); }, 50); }
+});
+
+// ------------------------------------------------------------------ assistant de démarrage (05/11)
+// À la première connexion, un écran par étape. Obligatoires : mot de passe (si arrivé par un lien), validation
+// parentale (moins de 18 ans), fiche Mérite (ou « je ne suis pas au Mérite »), structure (coach). Les autres
+// (licence, code postal) proposent « Plus tard » et restent ensuite dans l'encadré d'accueil.
+const asst = { etapes: [], i: 0, res: null };
+function etapesAssistant() {
+  const f = Saison.fiche || {}, E = [];
+  if (etat.demandeMdp && !f.mdpChoisi) E.push("mdp");
+  if (Saison.mineur && !Saison.parentValide) E.push("parent");
+  if (Saison.role === "coach" && !(Saison.structure?.type && Saison.structure?.nom)) E.push("structure");
+  if (!coachSeul() && !f.merite && !f.pasMerite) E.push("merite");
+  if (!f.assistantFait) {
+    if (!coachSeul() && !Saison.licence?.num) E.push("licence");
+    if (!f.cp) E.push("cp");
+  }
+  return E;
+}
+const OBLIG = new Set(["mdp", "parent", "structure", "merite"]);
+function ouvrirAssistant() {
+  if (etat.mdpConnu && !(Saison.fiche || {}).mdpChoisi) Saison.setFiche({ mdpChoisi: true });
+  const E = etapesAssistant();
+  if (!E.length) { if (!(Saison.fiche || {}).assistantFait) Saison.setFiche({ assistantFait: true }); return; }
+  Object.assign(asst, { etapes: [...E, "fin"], i: 0, res: null });
+  $("assistant").hidden = false; document.body.classList.add("assistant-ouvert");
+  rendreAssistant();
+}
+function fermerAssistant() {
+  $("assistant").hidden = true; document.body.classList.remove("assistant-ouvert");
+  Saison.setFiche({ assistantFait: true }); ecran("tournois"); rendreBienvenue();
+}
+function rendreAssistant() {
+  const k = asst.etapes[asst.i], n = asst.etapes.length - 1, f = Saison.fiche || {}, prenom = String(f.nom || "").split(" ")[0];
+  const pied = (ok, plusTard = !OBLIG.has(k)) => `<div class="as-pied">${plusTard ? `<button type="button" class="lien" data-as="passer">Plus tard</button>` : "<span></span>"}
+    <button type="submit" class="btn plein">${ok}</button></div>`;
+  const C = {
+    mdp: `<h2>Choisis ton mot de passe</h2><p>Tu te connecteras ensuite avec ton e-mail et ce mot de passe, sans attendre d'e-mail.</p>
+      <input id="as-mdp" type="password" autocomplete="new-password" minlength="8" required placeholder="8 caractères minimum">
+      <input id="as-mdp2" type="password" autocomplete="new-password" minlength="8" required placeholder="confirme le mot de passe">${pied("Enregistrer")}`,
+    parent: `<h2>Compte d'un joueur de moins de 18 ans</h2><p>Ce compte est celui du <b>parent ou représentant légal</b>. C'est toi qui décideras qui peut suivre le joueur (coachs).</p>
+      <label class="as-coche"><input type="checkbox" id="as-parent" required> Je suis le parent ou le représentant légal de ce joueur et j'accepte que ses données de golf (saison, résultats, Mérite) soient enregistrées dans GolfNexus.</label>${pied("Valider")}`,
+    structure: `<h2>Ta structure</h2><p>Les joueurs et les parents la verront dans tes demandes d'accès : ils doivent savoir qui tu représentes.</p>
+      <select id="as-st-type" required><option value="">Type…</option>${Object.entries(STRUCTURES).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+      <input id="as-st-nom" maxlength="80" required placeholder="ex. Golf de Massane, Ligue Occitanie…">${pied("Enregistrer")}`,
+    merite: `<h2>Trouve ta fiche Mérite</h2><p>GolfNexus y lit ton index et ta moyenne par rapport au SSS : c'est ce qui sert à <b>estimer ta place</b> sur chaque tournoi et à remplir <b>« Mes stats »</b>.
+      Même <b>non classé</b>, tu as une fiche dès que tu as joué des compétitions : cherche ton nom.</p>
+      <div class="as-ligne"><select id="as-sexe"><option value="H">Messieurs</option><option value="D" ${f.sexe === "D" ? "selected" : ""}>Dames</option></select>
+      <input id="as-nom" required minlength="2" placeholder="ton nom (et prénom)" autocomplete="family-name"></div>
+      <div id="as-res">${asst.res === "…" ? "<p class='meta'>Lecture du Mérite…</p>" : Array.isArray(asst.res) ? (asst.res.length ? asst.res.map((x, i) =>
+        `<button type="button" class="p-res" data-as-res="${i}"><b>${esc(x.NOM)} ${esc(x.PRENOM)}</b><span>${esc(x.CATEGORIE || "")} · ${esc(titre(x.GOLF || ""))} · ${/^\d+$/.test(String(x.RANK)) ? x.RANK + "e" : "non classé"}</span></button>`).join("")
+        : "<p class='meta'>Personne de ce nom au Mérite de ce mois.</p>") : typeof asst.res === "string" ? `<p class="meta">${esc(asst.res)}</p>` : ""}</div>
+      <div class="as-pied"><button type="button" class="lien" data-as="pas-merite">Je ne trouve pas ma fiche</button><button type="submit" class="btn plein">Chercher</button></div>`,
+    licence: `<h2>Ta licence ffgolf</h2><p>Elle sert à retrouver <b>tes places obtenues</b> dans les résultats (et le trou par trou). Elle est sur ta carte de licence ou l'appli ffgolf.</p>
+      <input id="as-lic" inputmode="numeric" pattern="[0-9 ]{6,14}" required placeholder="ex. 123456789">
+      <p class="meta">Sans licence : pas de <b>places obtenues</b> dans « Ma saison », pas de <b>trou par trou</b> ni de comparaison estimée / obtenue. Modifiable une fois par mois ensuite.</p>${pied("Enregistrer")}`,
+    cp: `<h2>Ton code postal</h2><p>Pour les distances jusqu'aux golfs et la carte autour de chez toi.</p>
+      <input id="as-cp" inputmode="numeric" maxlength="5" pattern="[0-9]{5}" required placeholder="ex. 34270">${pied("Enregistrer")}`,
+    fin: `<h2>C'est parti${prenom ? ", " + esc(prenom) : ""} ! ⛳</h2><p>Sur la carte, clique sur un tournoi puis sur l'étoile <b>☆</b> pour l'ajouter à <b>Ma saison</b>.
+      ${f.merite ? "Ton relevé est en cours : « Mes stats » se remplit dans 1 à 2 minutes." : ""}</p>
+      ${asst.etapes.some((x) => ["licence", "cp"].includes(x)) ? `<p class="meta">Ce que tu as passé reste dans l'encadré « Bienvenue » en haut de la page.</p>` : ""}
+      <div class="as-pied"><span></span><button type="submit" class="btn plein">Voir les tournois</button></div>`,
+  }[k];
+  $("as-carte").innerHTML = `${k !== "fin" ? `<div class="as-etape">Étape ${asst.i + 1} sur ${n}${OBLIG.has(k) ? "" : " · facultative"}</div>
+    <div class="bv-barre"><span style="width:${Math.round((100 * asst.i) / n)}%"></span></div>` : ""}<form id="as-form">${C}</form><p class="a-msg" id="as-msg"></p>`;
+  setTimeout(() => $("as-carte").querySelector("input:not([type=checkbox]),select")?.focus(), 30);
+}
+const suivant = () => { asst.i++; asst.res = null; rendreAssistant(); };
+const msgAs = (t) => { const m = $("as-msg"); if (m) { m.textContent = t; m.classList.add("erreur"); } };
+$("assistant").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const k = asst.etapes[asst.i], btn = e.target.querySelector("button[type=submit]");
+  if (k === "fin") { fermerAssistant(); return; }
+  btn.disabled = true;
+  try {
+    if (k === "mdp") {
+      if ($("as-mdp").value !== $("as-mdp2").value) throw new Error("les deux mots de passe sont différents");
+      const { error } = await sb.auth.updateUser({ password: $("as-mdp").value }); if (error) throw error;
+      Saison.setFiche({ mdpChoisi: true });
+    } else if (k === "parent") {
+      const r = await sb.from("profils").update({ parent_valide_le: new Date().toISOString() }).eq("id", Saison.moi.id).select("parent_valide_le").maybeSingle();
+      if (r.error) throw r.error; Saison.parentValide = r.data?.parent_valide_le;
+    } else if (k === "structure") {
+      const type = $("as-st-type").value, nom = $("as-st-nom").value.trim();
+      const { error } = await sb.from("profils").update({ structure_type: type, structure_nom: nom }).eq("id", Saison.moi.id); if (error) throw error;
+      Saison.structure = { type, nom };
+    } else if (k === "merite") {   // « Chercher » : la liste du Mérite du mois (lue une fois par session)
+      const sexe = $("as-sexe").value, mots = plier($("as-nom").value).split(" ").filter(Boolean);
+      asst.res = "…"; rendreAssistant(); $("as-nom").value = mots.join(" "); $("as-sexe").value = sexe;
+      try { const L = await meriteListe(sexe); asst.res = (L.datas || []).filter((x) => { const n = plier(x.NOM + " " + x.PRENOM); return mots.every((w) => n.includes(w)); }).slice(0, 12); asst.sexe = sexe; }
+      catch (err) { asst.res = "Mérite ffgolf illisible pour le moment : réessaie, ou « Je ne suis pas au Mérite »."; }
+      rendreAssistant(); $("as-nom").value = mots.join(" "); $("as-sexe").value = sexe; return;
+    } else if (k === "licence") {
+      const n = $("as-lic").value.replace(/\s/g, "");
+      if (!/^\d{6,12}$/.test(n)) throw new Error("6 à 12 chiffres");
+      const { data, error } = await sb.from("profils").update({ licence: n }).eq("id", Saison.moi.id).select("licence,licence_le,licence_verif").maybeSingle();
+      if (error) throw error; Saison.licence = { num: data.licence, le: data.licence_le, verif: data.licence_verif }; lancerReleve(true);
+    } else if (k === "cp") {
+      const cp = $("as-cp").value.trim(); if (!/^\d{5}$/.test(cp)) throw new Error("5 chiffres");
+      const L = await communesDe(cp); if (!L.length) throw new Error("code postal inconnu");
+      Saison.setFiche({ cp }); domicileDe(L[0], cp);
+    }
+    suivant();
+  } catch (err) { btn.disabled = false; msgAs("Impossible : " + (err.message || err)); }
+});
+$("assistant").addEventListener("click", async (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.as === "passer") { suivant(); return; }
+  if (b.dataset.as === "pas-merite") {
+    if (!confirm("Sans fiche Mérite, tu perds :\n• l'estimation de ta place sur chaque tournoi,\n• l'onglet « Mes stats » (progression, régularité, Mérite mois par mois).\n\nTu pourras la relier plus tard dans « Mon profil ». Continuer sans ?")) return;
+    Saison.setFiche({ pasMerite: true }); suivant(); return;
+  }
+  if (b.dataset.asRes != null) {
+    const x = asst.res[+b.dataset.asRes]; b.disabled = true;
+    try {
+      Saison.setFiche({ sexe: asst.sexe, nom: Saison.fiche.nom || titre(`${x.PRENOM} ${x.NOM}`), club: Saison.fiche.club || titre(x.GOLF || "") });
+      await majMerite(x.CODE, { nom: x.NOM, prenom: x.PRENOM });
+      lancerReleve(true); suivant();
+    } catch (err) { b.disabled = false; msgAs("Lecture de la fiche impossible : " + (err.message || err)); }
+  }
 });
 
 demarrage();
