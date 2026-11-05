@@ -302,7 +302,7 @@ details.autres summary { cursor: pointer; color: var(--vert-2); font-size: 12px;
 .ms-ligne { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
 
 /* ---------------------------------------------------------------- Ma saison : écran */
-.ecran-saison[hidden], .ecran-profil[hidden], .ecran-stats[hidden], .ecran-admin[hidden], #ecran-tournois[hidden] { display: none; }
+.ecran-saison[hidden], .ecran-profil[hidden], .ecran-stats[hidden], .ecran-admin[hidden], #ecran-coach[hidden], #ecran-tournois[hidden] { display: none; }
 .s-tete { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .s-tete h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.02em; color: var(--vert); display: flex; align-items: center; gap: 10px; }
 .s-tete select { font: inherit; font-size: 18px; font-weight: 700; color: var(--vert); border: 1px solid var(--bord); background: var(--carte); border-radius: 8px; padding: 2px 6px; }
@@ -669,6 +669,7 @@ body:not(.verrou) #accueil { display: none; }
         <button type="button" data-ecran="saison">Ma saison<span class="nb" id="nb-saison" hidden></span></button>
         <button type="button" data-ecran="stats" id="v-stats" hidden>Mes stats</button>
         <button type="button" data-ecran="profil" id="v-profil" hidden>Mon profil</button>
+        <button type="button" data-ecran="coach" id="v-coach" hidden>Coach</button>
         <button type="button" data-ecran="admin" id="v-admin" hidden>Admin</button>
       </nav>
       <p class="saison" id="saison"></p>
@@ -798,6 +799,11 @@ body:not(.verrou) #accueil { display: none; }
     <div class="s-tete"><h2 id="st-titre">Mes stats <span class="seg" id="st-listes" role="group" aria-label="Mérite"></span></h2></div>
     <div id="st-contenu"></div>
     <div id="st-bulle" class="st-bulle" role="tooltip" hidden></div>
+  </section>
+
+  <section id="ecran-coach" class="ecran-admin" hidden aria-labelledby="co-titre">
+    <div class="s-tete"><h2 id="co-titre">Coach</h2></div>
+    <div id="co-contenu"></div>
   </section>
 
   <section id="ecran-admin" class="ecran-admin" hidden aria-labelledby="ad-titre">
@@ -1961,7 +1967,8 @@ function rendreCompte() {
   const b = $("b-compte"), pan = $("b-pan"), c = $("s-compte"), connecte = Saison.mode === "compte" && !!sb;
   $("v-profil").hidden = !connecte; $("v-stats").hidden = !connecte;
   $("v-admin").hidden = !(connecte && Saison.role === "admin" && !Saison.demo);
-  if (!connecte && (etat.ecran === "profil" || etat.ecran === "stats" || etat.ecran === "admin")) ecran("tournois");
+  $("v-coach").hidden = !(connecte && (Saison.role === "coach" || Saison.role === "admin") && !Saison.demo);
+  if (!connecte && ["profil", "stats", "admin", "coach"].includes(etat.ecran)) ecran("tournois");
   pan.hidden = !compte.ouvert;
   if (connecte && Saison.demo?.coach) {   // coach : vue d'un joueur, lecture seule
     $("v-profil").hidden = true;
@@ -2110,16 +2117,18 @@ function ecran(nom) {
   $("ecran-profil").hidden = nom !== "profil";
   $("ecran-stats").hidden = nom !== "stats";
   $("ecran-admin").hidden = nom !== "admin";
+  $("ecran-coach").hidden = nom !== "coach";
   for (const b of document.querySelectorAll(".vues button"))
     if (b.dataset.ecran === nom) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   const h = new URLSearchParams(location.hash.slice(1));
-  if (["saison", "profil", "stats", "admin"].includes(nom)) h.set("v", nom); else h.delete("v");
+  if (["saison", "profil", "stats", "admin", "coach"].includes(nom)) h.set("v", nom); else h.delete("v");
   history.replaceState(null, "", location.pathname + location.search + (h.toString() ? "#" + h : ""));
   rendreCompte();
   if (nom === "saison") rendreSaison();
   else if (nom === "profil") rendreProfil();
   else if (nom === "stats") rendreStats();
   else if (nom === "admin") rendreAdmin();
+  else if (nom === "coach") rendreCoach();
   else { rendre(); setTimeout(() => carte && carte.invalidateSize(), 0); }
   window.scrollTo({ top: 0 });
 }
@@ -3002,7 +3011,7 @@ async function rendreAcces() {
     <p>Ce compte est celui du <b>parent ou représentant légal</b>. C'est toi qui décides qui peut suivre le joueur (coachs).</p>
     <label><input type="checkbox" id="p-parent-ok"> Je suis le parent ou le représentant légal de ce joueur et j'accepte que ses données de golf (saison, résultats, Mérite) soient enregistrées dans GolfNexus.</label>
     <button type="button" class="btn plein" id="p-parent-valider">Valider</button></div>`;
-  const [C, J] = await Promise.all([sb.rpc("mes_coachs"), Saison.role !== "joueur" ? sb.rpc("mes_joueurs") : { data: null }]);
+  const C = await sb.rpc("mes_coachs");
   const lib = { demande: "en attente", accepte: "accès accordé", refuse: "refusé" };
   const coachs = C.data || [];
   h += `<div class="bloc p-bloc"><h3>Coachs qui suivent ce joueur</h3>
@@ -3013,33 +3022,9 @@ async function rendreAcces() {
       ${c.statut === "accepte" ? `<button type="button" class="btn" data-acces-fin="${esc(c.coach_id)}">Retirer l'accès</button>` : ""}</div>`).join("")
       : `<p class="meta">Aucun coach. Un coach demande l'accès avec ta licence ffgolf ; la demande apparaît ici et tu choisis. Un coach accepté voit ta saison et tes stats en lecture seule, sans rien pouvoir modifier.</p>`}
     ${Saison.mineur && !Saison.parentValide && coachs.some((c) => c.statut === "demande") ? `<p class="meta">Valide d'abord le compte (encadré ci-dessus) pour pouvoir accepter un coach.</p>` : ""}</div>`;
-  if (J.data) {
-    const joueurs = J.data;
-    const st = Saison.structure || {};
-    h += `<form class="bloc p-bloc ${st.type && st.nom ? "" : "p-parent"}" id="p-structure"><h3>Ma structure (coach)</h3>
-      <p class="meta">Les joueurs et les parents la voient dans ta demande d'accès : ils doivent savoir qui tu représentes. Obligatoire pour demander un accès.</p>
-      <div class="c-form"><select id="p-st-type" aria-label="Type de structure"><option value="">Type…</option>${Object.entries(STRUCTURES).map(([k, v]) =>
-        `<option value="${k}" ${k === st.type ? "selected" : ""}>${v}</option>`).join("")}</select>
-        <input id="p-st-nom" maxlength="80" placeholder="ex. Golf de Massane, Ligue Occitanie, Académie…" value="${esc(st.nom || "")}" aria-label="Nom de la structure">
-        <button type="submit" class="btn plein">Enregistrer</button></div></form>`;
-    h += `<div class="bloc p-bloc"><h3>Mes joueurs (coach)</h3>
-      <form class="c-form" id="p-demande"><input id="p-demande-lic" inputmode="numeric" placeholder="licence ffgolf du joueur" aria-label="Licence du joueur" required>
-        <input id="p-demande-nom" type="text" maxlength="60" placeholder="nom du joueur (pour toi)" aria-label="Nom du joueur">
-        <button type="submit" class="btn plein">Demander l'accès</button></form>
-      <p class="meta">Le joueur (ou son parent) reçoit ta demande dans son profil et l'accepte ou non. Sans compte GolfNexus, rien ne se passe : invite-le ci-dessous.</p>
-      <form class="c-form" id="p-inviter"><input id="p-inv-email" type="email" placeholder="e-mail du joueur (du parent si moins de 18 ans)" aria-label="E-mail du joueur" required>
-        <input id="p-inv-nom" type="text" maxlength="60" placeholder="nom du joueur" aria-label="Nom du joueur">
-        <label class="p-inv-mineur"><input id="p-inv-mineur" type="checkbox"> moins de 18 ans</label>
-        <button type="submit" class="btn">Inviter</button></form>
-      <p class="meta">Il reçoit un e-mail GolfNexus ; à son inscription, ta demande de suivi l'attend : il (ou son parent) n'a qu'à l'accepter.</p>
-      ${joueurs.map((j) => `<div class="acces-ligne"><div class="qui"><b>${esc(j.nom || j.libelle || "Joueur")}</b><small>licence ${esc(j.licence || "—")} · demandé le ${fmtDate(String(j.demande_le).slice(0, 10))}</small></div>
-        <span class="statut-acces ${j.statut}">${lib[j.statut]}</span>
-        ${j.statut === "accepte" ? `<button type="button" class="btn plein" data-voir="${esc(j.joueur_id)}">Voir sa saison</button>` : ""}
-        <button type="button" class="btn" data-acces-coach-fin="${esc(j.joueur_id)}">${j.statut === "accepte" ? "Ne plus suivre" : "Annuler"}</button></div>`).join("")}</div>`;
-  }
   box.innerHTML = h;
 }
-$("p-acces").addEventListener("click", async (e) => {
+async function clicAcces(e) {
   const b = e.target.closest("button"); if (!b) return;
   const moi = Saison.moi?.id;
   let r = null;
@@ -3055,16 +3040,16 @@ $("p-acces").addEventListener("click", async (e) => {
   else return;
   if (r?.error) signaler(/validation_parent/.test(r.error.message) ? "Valide d'abord le compte en tant que parent (encadré jaune)." : "Impossible : " + r.error.message);
   if (Saison.role !== "joueur") { const J = await sb.rpc("mes_joueurs"); Saison.joueurs = (J.data || []).filter((j) => j.statut === "accepte"); rendreCompte(); }
-  rendreAcces();
-});
-$("p-acces").addEventListener("submit", async (e) => {
+  rafraichirAcces();
+}
+async function envoiAcces(e) {
   if (e.target.id === "p-structure") {
     e.preventDefault();
     const type = $("p-st-type").value, nom = $("p-st-nom").value.trim();
     if (!type || !nom) { signaler("Choisis le type et indique le nom de ta structure."); return; }
     const { error } = await sb.from("profils").update({ structure_type: type, structure_nom: nom }).eq("id", Saison.moi.id);
     if (error) { signaler("Enregistrement impossible : " + error.message); return; }
-    Saison.structure = { type, nom }; signaler("Structure enregistrée : les joueurs la verront dans tes demandes."); rendreAcces();
+    Saison.structure = { type, nom }; signaler("Structure enregistrée : les joueurs la verront dans tes demandes."); rafraichirAcces();
     return;
   }
   if (e.target.id === "p-inviter") {
@@ -3081,8 +3066,45 @@ $("p-acces").addEventListener("submit", async (e) => {
   if (!/^\d{6,12}$/.test(lic)) { signaler("Licence : chiffres uniquement."); return; }
   const { error } = await sb.rpc("demander_acces", { lic, nom: $("p-demande-nom").value.trim() || null });
   signaler(error ? (/structure_manquante/.test(error.message) ? "Renseigne d'abord ta structure (club, ligue, académie…) : les joueurs doivent savoir qui tu représentes." : "Demande impossible : " + error.message) : "Demande envoyée. Si ce joueur a un compte GolfNexus, il la verra dans son profil.");
-  rendreAcces();
-});
+  rafraichirAcces();
+}
+// les deux écrans partagent les mêmes boutons et formulaires
+const rafraichirAcces = () => (etat.ecran === "coach" ? rendreCoach() : rendreAcces());
+for (const id of ["p-acces", "co-contenu"]) { $(id).addEventListener("click", clicAcces); $(id).addEventListener("submit", envoiAcces); }
+
+// ---- onglet Coach (coachs et administrateur) : structure, joueurs suivis, invitations ; plus tard les équipes
+async function rendreCoach() {
+  const box = $("co-contenu"); if (!box) return;
+  if (Saison.role !== "coach" && Saison.role !== "admin") { box.innerHTML = "<div class='bloc vide'>Réservé aux coachs.</div>"; return; }
+  const J = await sb.rpc("mes_joueurs");
+  const lib = { demande: "en attente", accepte: "accès accordé", refuse: "refusé" };
+  let h = "";
+  {
+    const joueurs = J.data || [];
+    const st = Saison.structure || {};
+    h += `<form class="bloc p-bloc ${st.type && st.nom ? "" : "p-parent"}" id="p-structure"><h3>Ma structure</h3>
+      <p class="meta">Les joueurs et les parents la voient dans ta demande d'accès : ils doivent savoir qui tu représentes. Obligatoire pour demander un accès.</p>
+      <div class="c-form"><select id="p-st-type" aria-label="Type de structure"><option value="">Type…</option>${Object.entries(STRUCTURES).map(([k, v]) =>
+        `<option value="${k}" ${k === st.type ? "selected" : ""}>${v}</option>`).join("")}</select>
+        <input id="p-st-nom" maxlength="80" placeholder="ex. Golf de Massane, Ligue Occitanie, Académie…" value="${esc(st.nom || "")}" aria-label="Nom de la structure">
+        <button type="submit" class="btn plein">Enregistrer</button></div></form>`;
+    h += `<div class="bloc p-bloc"><h3>Mes joueurs</h3>
+      <form class="c-form" id="p-demande"><input id="p-demande-lic" inputmode="numeric" placeholder="licence ffgolf du joueur" aria-label="Licence du joueur" required>
+        <input id="p-demande-nom" type="text" maxlength="60" placeholder="nom du joueur (pour toi)" aria-label="Nom du joueur">
+        <button type="submit" class="btn plein">Demander l'accès</button></form>
+      <p class="meta">Le joueur (ou son parent) reçoit ta demande dans son profil et l'accepte ou non. Sans compte GolfNexus, rien ne se passe : invite-le ci-dessous.</p>
+      <form class="c-form" id="p-inviter"><input id="p-inv-email" type="email" placeholder="e-mail du joueur (du parent si moins de 18 ans)" aria-label="E-mail du joueur" required>
+        <input id="p-inv-nom" type="text" maxlength="60" placeholder="nom du joueur" aria-label="Nom du joueur">
+        <label class="p-inv-mineur"><input id="p-inv-mineur" type="checkbox"> moins de 18 ans</label>
+        <button type="submit" class="btn">Inviter</button></form>
+      <p class="meta">Il reçoit un e-mail GolfNexus ; à son inscription, ta demande de suivi l'attend : il (ou son parent) n'a qu'à l'accepter.</p>
+      ${joueurs.map((j) => `<div class="acces-ligne"><div class="qui"><b>${esc(j.nom || j.libelle || "Joueur")}</b><small>licence ${esc(j.licence || "—")} · demandé le ${fmtDate(String(j.demande_le).slice(0, 10))}</small></div>
+        <span class="statut-acces ${j.statut}">${lib[j.statut]}</span>
+        ${j.statut === "accepte" ? `<button type="button" class="btn plein" data-voir="${esc(j.joueur_id)}">Voir sa saison</button>` : ""}
+        <button type="button" class="btn" data-acces-coach-fin="${esc(j.joueur_id)}">${j.statut === "accepte" ? "Ne plus suivre" : "Annuler"}</button></div>`).join("")}</div>`;
+  }
+  box.innerHTML = h;
+}
 
 // ---- Administration : invitations et comptes
 async function rendreAdmin() {
