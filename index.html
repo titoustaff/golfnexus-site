@@ -613,6 +613,30 @@ body.lecture-seule .s-ctrl, body.lecture-seule #s-parcourir, body.lecture-seule 
 body.lecture-seule #fiche-saison .seg, body.lecture-seule #fiche-saison [data-retirer], body.lecture-seule #fiche-saison [data-ajouter] + .doux,
 body.lecture-seule #fiche-saison [data-ajouter], body.lecture-seule .note[value=""] { display: none !important; }
 body.lecture-seule .note { pointer-events: none; background: transparent; border-color: transparent; font-style: italic; }
+/* ---------------------------------------------------------------- Coach : onglets, équipes, calendrier d'équipe */
+.co-onglets { margin: 0 0 14px; }
+.co-equipe .co-eq-tete { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; } .co-eq-tete h3 { margin: 0; flex: 1; }
+.co-eq-tete h3 small { font-weight: 500; color: var(--doux); font-size: 13px; }
+.co-puces { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.co-puce { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 999px; background: var(--sauge-pale); font-size: 13px; font-weight: 600; }
+.co-puce small { font-weight: 500; color: var(--doux); }
+.co-puce button { border: 0; background: none; cursor: pointer; font-size: 15px; line-height: 1; color: var(--doux); padding: 0 4px; }
+.co-puce.s-envisage { background: #edf1e8; box-shadow: inset 3px 0 0 var(--s-envisage); padding-right: 10px; }
+.co-puce.s-inscrit { background: #dcefe2; box-shadow: inset 3px 0 0 var(--s-inscrit); padding-right: 10px; }
+.co-puce.s-joue { background: #fbf0cc; box-shadow: inset 3px 0 0 var(--s-joue); padding-right: 10px; }
+.co-ajout { margin-top: 8px; } .co-ajout select { max-width: 280px; }
+.co-filtres { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.co-filtres label { display: flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 600; color: var(--doux); }
+.co-filtres select { height: 34px; border: 1px solid var(--bord); border-radius: 8px; background: var(--fond); }
+.st-legende i.lg { width: 10px; height: 10px; border-radius: 3px; } .st-legende i.lg.s-envisage { background: var(--s-envisage); }
+.st-legende i.lg.s-inscrit { background: var(--s-inscrit); } .st-legende i.lg.s-joue { background: var(--s-joue); }
+.co-cal { list-style: none; margin: 0 0 6px; padding: 0; }
+.co-cal li { display: grid; grid-template-columns: 52px 1fr; gap: 12px; padding: 10px 6px; border-bottom: 1px solid var(--bord); }
+.co-cal li.commun { background: linear-gradient(90deg, rgba(240,180,0,.10), transparent 60%); border-radius: 8px; }
+.co-cal li.passe .date { opacity: .6; }
+.co-cal .date { display: flex; flex-direction: column; align-items: center; background: var(--sauge-pale); border-radius: 10px; padding: 4px 0; height: fit-content; }
+.co-cal .date b { font-size: 18px; color: var(--vert); } .co-cal .date span { font-size: 11px; color: var(--doux); text-transform: uppercase; }
+.co-onglets button[aria-pressed=true], #st-listes button[aria-pressed=true] { background: var(--vert); color: #fff; }
 
 </style>
 </head>
@@ -3079,9 +3103,20 @@ const rafraichirAcces = () => (etat.ecran === "coach" ? rendreCoach() : rendreAc
 for (const id of ["p-acces", "co-contenu"]) { $(id).addEventListener("click", clicAcces); $(id).addEventListener("submit", envoiAcces); }
 
 // ---- onglet Coach (coachs et administrateur) : structure, joueurs suivis, invitations ; plus tard les équipes
+const co = { onglet: "joueurs", equipe: "", annee: new Date().getFullYear() };
 async function rendreCoach() {
   const box = $("co-contenu"); if (!box) return;
   if (Saison.role !== "coach" && Saison.role !== "admin") { box.innerHTML = "<div class='bloc vide'>Réservé aux coachs.</div>"; return; }
+  box.innerHTML = `<div class="seg co-onglets" role="group" aria-label="Espace coach">${[["joueurs", "Joueurs"], ["equipes", "Équipes"], ["calendrier", "Calendrier d'équipe"]]
+    .map(([k, v]) => `<button type="button" data-co-onglet="${k}" aria-pressed="${co.onglet === k}">${v}</button>`).join("")}</div><div id="co-corps"><p class="meta">Chargement…</p></div>`;
+  const corps = $("co-corps");
+  try { corps.innerHTML = co.onglet === "equipes" ? await htmlEquipes() : co.onglet === "calendrier" ? await htmlCalendrierEquipe() : await htmlJoueurs(); }
+  catch (e) { corps.innerHTML = `<div class="bloc vide">Lecture impossible : ${esc(e.message || String(e))}</div>`; }
+}
+const majMots = (x) => x.toLowerCase().replace(/(^|[\s/(-])(\p{L})/gu, (m, a, c) => a + c.toUpperCase());
+const infoJoueur = (j) => [j.categorie && majMots(j.categorie), j.naissance && `né${j.sexe === "D" ? "e" : ""} en ${j.naissance}`,
+  j.index_golf != null && `index ${String(j.index_golf).replace(".", ",")}`].filter(Boolean).join(" · ");
+async function htmlJoueurs() {
   const J = await sb.rpc("mes_joueurs");
   const lib = { demande: "en attente", accepte: "accès accordé", refuse: "refusé" };
   let h = "";
@@ -3104,13 +3139,94 @@ async function rendreCoach() {
         <label class="p-inv-mineur"><input id="p-inv-mineur" type="checkbox"> moins de 18 ans</label>
         <button type="submit" class="btn">Inviter</button></form>
       <p class="meta">Il reçoit un e-mail GolfNexus ; à son inscription, ta demande de suivi l'attend : il (ou son parent) n'a qu'à l'accepter.</p>
-      ${joueurs.map((j) => `<div class="acces-ligne"><div class="qui"><b>${esc(j.nom || j.libelle || "Joueur")}</b><small>licence ${esc(j.licence || "—")} · demandé le ${fmtDate(String(j.demande_le).slice(0, 10))}</small></div>
+      ${joueurs.map((j) => `<div class="acces-ligne"><div class="qui"><b>${esc(j.nom || j.libelle || "Joueur")}</b><small>${j.statut === "accepte" && infoJoueur(j) ? esc(infoJoueur(j)) + " · " : ""}licence ${esc(j.licence || "—")} · demandé le ${fmtDate(String(j.demande_le).slice(0, 10))}</small></div>
         <span class="statut-acces ${j.statut}">${lib[j.statut]}</span>
         ${j.statut === "accepte" ? `<button type="button" class="btn plein" data-voir="${esc(j.joueur_id)}">Voir sa saison</button>` : ""}
         <button type="button" class="btn" data-acces-coach-fin="${esc(j.joueur_id)}">${j.statut === "accepte" ? "Ne plus suivre" : "Annuler"}</button></div>`).join("")}</div>`;
   }
-  box.innerHTML = h;
+  return h;
 }
+
+// ---- Équipes : le coach range ses joueurs (accès accepté) ; un joueur peut être dans plusieurs équipes
+async function htmlEquipes() {
+  const [E, J] = await Promise.all([sb.from("equipes").select("id,nom,equipe_joueurs(joueur_id)").order("nom"), sb.rpc("mes_joueurs")]);
+  if (E.error) throw E.error;
+  const ok = (J.data || []).filter((j) => j.statut === "accepte"), nomDe = (id) => ok.find((j) => j.joueur_id === id);
+  let h = `<form class="bloc c-form" id="co-eq-form"><input id="co-eq-nom" maxlength="60" required placeholder="nouvelle équipe (ex. Équipe 1, U16, Mid-Am)" aria-label="Nom de l'équipe">
+    <button type="submit" class="btn plein">Créer l'équipe</button></form>`;
+  if (!ok.length) h += `<div class="bloc vide">Aucun joueur suivi pour l'instant : ajoute des joueurs dans l'onglet « Joueurs » (accès accepté), puis range-les ici.</div>`;
+  for (const e of E.data || []) {
+    const membres = (e.equipe_joueurs || []).map((m) => m.joueur_id), dispo = ok.filter((j) => !membres.includes(j.joueur_id));
+    h += `<div class="bloc co-equipe"><div class="co-eq-tete"><h3>${esc(e.nom)} <small>${membres.length} joueur${membres.length > 1 ? "s" : ""}</small></h3>
+      <button type="button" class="lien" data-eq-cal="${esc(e.id)}">Calendrier</button><button type="button" class="lien" data-eq-suppr="${esc(e.id)}">Supprimer</button></div>
+      <div class="co-puces">${membres.map((id) => { const j = nomDe(id); return `<span class="co-puce">${esc(j?.nom || j?.libelle || "joueur")}${j && infoJoueur(j) ? ` <small>${esc(infoJoueur(j))}</small>` : ""}
+        <button type="button" aria-label="Retirer de l'équipe" data-eq-retirer="${esc(e.id)}|${esc(id)}">×</button></span>`; }).join("") || `<span class="meta">Aucun joueur dans cette équipe.</span>`}</div>
+      ${dispo.length ? `<div class="c-form co-ajout"><select data-eq-choix="${esc(e.id)}" aria-label="Joueur à ajouter">${dispo.map((j) => `<option value="${esc(j.joueur_id)}">${esc(j.nom || j.libelle || j.licence)}</option>`).join("")}</select>
+        <button type="button" class="btn" data-eq-ajouter="${esc(e.id)}">Ajouter</button></div>` : ""}</div>`;
+  }
+  return h;
+}
+// ---- Calendrier d'équipe : les saisons des joueurs superposées, par tournoi (qui y va, avec quel statut, quelle place)
+async function htmlCalendrierEquipe() {
+  const [E, J] = await Promise.all([sb.from("equipes").select("id,nom,equipe_joueurs(joueur_id)").order("nom"), sb.rpc("mes_joueurs")]);
+  const ok = (J.data || []).filter((j) => j.statut === "accepte"), eq = (E.data || []).find((e) => e.id === co.equipe);
+  if (co.equipe && !eq) co.equipe = "";
+  const ids = eq ? (eq.equipe_joueurs || []).map((m) => m.joueur_id) : ok.map((j) => j.joueur_id);
+  const nom = (id) => { const j = ok.find((x) => x.joueur_id === id); return j?.nom || j?.libelle || "joueur"; };
+  const annees = [...new Set(etat.tournois.map((t) => t.annee))].sort();
+  let h = `<div class="bloc co-filtres"><label>Équipe <select id="co-cal-eq"><option value="">Tous mes joueurs (${ok.length})</option>${(E.data || []).map((e) =>
+    `<option value="${esc(e.id)}" ${e.id === co.equipe ? "selected" : ""}>${esc(e.nom)} (${(e.equipe_joueurs || []).length})</option>`).join("")}</select></label>
+    <label>Année <select id="co-cal-an">${annees.map((a) => `<option ${a === co.annee ? "selected" : ""}>${a}</option>`).join("")}</select></label>
+    <span class="st-legende"><span><i class="lg s-envisage"></i>envisagé</span><span><i class="lg s-inscrit"></i>inscrit</span><span><i class="lg s-joue"></i>joué</span></span></div>`;
+  if (!ids.length) return h + `<div class="bloc vide">Pas de joueur dans ${eq ? "cette équipe" : "ta liste"}.</div>`;
+  const S = await sb.from("saisons").select("id,user_id,annee").in("user_id", ids).eq("annee", co.annee);
+  const sid = (S.data || []).map((x) => x.id), qui = Object.fromEntries((S.data || []).map((x) => [x.id, x.user_id]));
+  const [I, R] = await Promise.all([sid.length ? sb.from("saison_tournois").select("saison_id,tournoi_id,statut").in("saison_id", sid) : { data: [] },
+    sb.from("resultats_perso").select("user_id,tournoi_id,place,classes").in("user_id", ids)]);
+  const res = {}; for (const r of R.data || []) res[r.user_id + "|" + r.tournoi_id] = r;
+  const parT = {};
+  for (const r of I.data || []) { const t = tournoiDe(r.tournoi_id); if (!t) continue; (parT[t.id] ||= { t, j: [] }).j.push({ id: qui[r.saison_id], statut: r.statut }); }
+  const liste = Object.values(parT).sort((a, b) => a.t.debut.localeCompare(b.t.debut));
+  const communs = liste.filter((x) => x.j.length > 1).length, avenir = liste.filter((x) => x.t.fin >= AUJ);
+  h += `<div class="st-tuiles petites">${tuileSt(ids.length, "joueurs")}${tuileSt(liste.length, `tournois en ${co.annee}`)}${tuileSt(communs, "tournois à plusieurs", "rendez-vous de l'équipe")}${tuileSt(avenir.length, "à venir")}</div>`;
+  if (!liste.length) return h + `<div class="bloc vide">Aucun tournoi prévu par ces joueurs en ${co.annee}.</div>`;
+  let mois = -1; h += `<div class="bloc">`;
+  for (const { t, j } of liste) {
+    const m = +t.debut.slice(5, 7) - 1;
+    if (m !== mois) { if (mois >= 0) h += "</ol>"; h += `<h4 class="s-mois">${MOIS[m]}</h4><ol class="co-cal">`; mois = m; }
+    h += `<li class="${t.fin < AUJ ? "passe" : ""} ${j.length > 1 ? "commun" : ""}"><div class="date"><b>${new Date(t.debut + "T12:00").getDate()}</b><span>${MOIS_COURT[m]}</span></div>
+      <div><button type="button" class="s-nom" data-co-ouvrir="${esc(t.id)}">${esc(titre(t.nom))}</button>
+      <div class="meta">${esc(titre(t.golf_nom))} · ${esc(t.departement || "")} · <span class="tag circuit c-${circuitDe(t)}">${esc(circuitLib(t))}</span></div>
+      <div class="co-puces">${j.sort((a, b) => nom(a.id).localeCompare(nom(b.id))).map((x) => { const r = res[x.id + "|" + t.id];
+        return `<span class="co-puce s-${x.statut}">${esc(nom(x.id))}${r ? ` <small>${esc(String(r.place).replace(/^(\d+)/, "$1ᵉ"))}${r.classes ? "/" + r.classes : ""}</small>` : ""}</span>`; }).join("")}</div></div></li>`;
+  }
+  return h + "</ol></div>";
+}
+$("co-contenu").addEventListener("click", async (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.coOnglet) { co.onglet = b.dataset.coOnglet; rendreCoach(); return; }
+  if (b.dataset.coOuvrir) { const t = tournoiDe(b.dataset.coOuvrir); if (t) ouvrir(t); return; }
+  if (b.dataset.eqCal) { co.equipe = b.dataset.eqCal; co.onglet = "calendrier"; rendreCoach(); return; }
+  let r = null;
+  if (b.dataset.eqSuppr) { if (!confirm("Supprimer cette équipe ? (les joueurs restent suivis)")) return; r = await sb.from("equipes").delete().eq("id", b.dataset.eqSuppr); }
+  else if (b.dataset.eqRetirer) { const [eq, j] = b.dataset.eqRetirer.split("|"); r = await sb.from("equipe_joueurs").delete().eq("equipe_id", eq).eq("joueur_id", j); }
+  else if (b.dataset.eqAjouter) { const j = document.querySelector(`[data-eq-choix="${CSS.escape(b.dataset.eqAjouter)}"]`)?.value; if (!j) return;
+    r = await sb.from("equipe_joueurs").insert({ equipe_id: b.dataset.eqAjouter, joueur_id: j }); }
+  else return;
+  if (r?.error) signaler("Impossible : " + r.error.message);
+  rendreCoach();
+});
+$("co-contenu").addEventListener("change", (e) => {
+  if (e.target.id === "co-cal-eq") { co.equipe = e.target.value; rendreCoach(); }
+  if (e.target.id === "co-cal-an") { co.annee = +e.target.value; rendreCoach(); }
+});
+$("co-contenu").addEventListener("submit", async (e) => {
+  if (e.target.id !== "co-eq-form") return;
+  e.preventDefault();
+  const { error } = await sb.from("equipes").insert({ nom: $("co-eq-nom").value.trim() });
+  if (error) signaler("Création impossible : " + error.message); else signaler("Équipe créée : ajoute-lui des joueurs.");
+  rendreCoach();
+});
 
 // ---- Administration : invitations et comptes
 async function rendreAdmin() {
