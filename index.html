@@ -608,6 +608,11 @@ body:not(.verrou) #accueil { display: none; }
 .p-inv-mineur { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; } #p-inviter { flex-wrap: wrap; margin-top: 8px; }
 .acces-ligne .structure { font-size: 13px; color: var(--texte); } .acces-ligne .structure i { color: var(--doux); font-style: normal; }
 #p-inviter .p-inv-mineur input { width: auto; height: auto; flex: none; min-width: 0; margin: 0; }
+/* vue coach (lecture seule) : pas de boutons de modification ; les notes du joueur restent lisibles */
+body.lecture-seule .s-ctrl, body.lecture-seule #s-parcourir, body.lecture-seule .etoile, body.lecture-seule #s-dom-f,
+body.lecture-seule #fiche-saison .seg, body.lecture-seule #fiche-saison [data-retirer], body.lecture-seule #fiche-saison [data-ajouter] + .doux,
+body.lecture-seule #fiche-saison [data-ajouter], body.lecture-seule .note[value=""] { display: none !important; }
+body.lecture-seule .note { pointer-events: none; background: transparent; border-color: transparent; font-style: italic; }
 
 </style>
 </head>
@@ -1967,7 +1972,8 @@ function rendreCompte() {
   const b = $("b-compte"), pan = $("b-pan"), c = $("s-compte"), connecte = Saison.mode === "compte" && !!sb;
   $("v-profil").hidden = !connecte; $("v-stats").hidden = !connecte;
   $("v-admin").hidden = !(connecte && Saison.role === "admin" && !Saison.demo);
-  $("v-coach").hidden = !(connecte && (Saison.role === "coach" || Saison.role === "admin") && !Saison.demo);
+  $("v-coach").hidden = !(connecte && (Saison.role === "coach" || Saison.role === "admin") && (!Saison.demo || Saison.demo.coach));
+  document.body.classList.toggle("lecture-seule", !!Saison.demo);   // vue coach : boutons de modification masqués
   if (!connecte && ["profil", "stats", "admin", "coach"].includes(etat.ecran)) ecran("tournois");
   pan.hidden = !compte.ouvert;
   if (connecte && Saison.demo?.coach) {   // coach : vue d'un joueur, lecture seule
