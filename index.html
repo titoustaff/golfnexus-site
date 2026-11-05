@@ -726,6 +726,8 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
   .co-table td.co-actions { display: flex !important; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .co-ligne .co-actions { width: 100%; }
 }
+.st-tour { stroke: var(--carte); stroke-width: 1.5; fill-opacity: .55; } .st-tour.c2 { fill: var(--st2); } .st-tour.c1 { fill: var(--st1); }
+.st-legende i.pt { width: 9px; height: 9px; border-radius: 50%; } .st-legende i.pt.c2 { background: var(--st2); }
 
 </style>
 </head>
@@ -2788,11 +2790,11 @@ function graduations(min, max, n = 4) {
   return t;
 }
 // courbe(s) dans le temps ; series = [{ nom, cls, pts: [{ x: étiquette, y, tip }] }] (mêmes x pour toutes)
-function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero = false, W = 1040 }) {
+function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero = false, W = 1040, plancher = null }) {
   const g = 44, d = 64, hautM = 14, basM = 26, xs = series[0].pts.map((p) => p.x), n = xs.length;
   const ys = series.flatMap((s) => s.pts.map((p) => p.y)).filter((v) => v != null);
   if (!ys.length) return "";
-  const t = graduations(Math.min(...ys, ...(zero ? [0] : [])), Math.max(...ys, ...(zero ? [0] : []))), lo = t[0], hi = t.at(-1);
+  const t = graduations(Math.min(...ys, ...(zero ? [0] : []), ...(plancher != null ? [plancher] : [])), Math.max(...ys, ...(zero ? [0] : []))), lo = t[0], hi = t.at(-1);
   const X = (i) => g + (n === 1 ? (W - g - d) / 2 : (i * (W - g - d)) / (n - 1));
   const Y = (v) => { const r = (v - lo) / (hi - lo || 1); return hautM + (inverse ? r : 1 - r) * (h - hautM - basM); };
   const pasX = Math.max(1, Math.ceil(n / Math.max(4, Math.floor(W / 90))));
@@ -2802,6 +2804,7 @@ function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero 
   for (const s of series) {
     const pts = s.pts.map((p, i) => (p.y == null ? null : [X(i), Y(p.y), p])).filter(Boolean);
     if (!pts.length) continue;
+    if (s.points) { for (const [x, y] of pts) o += `<circle class="st-tour ${s.cls}" cx="${x}" cy="${y}" r="4"/>`; continue; }   // un point par tour, sans trait
     o += `<path class="st-l ${s.cls}" d="${pts.map((q, i) => (i ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1)).join(" ")}"/>`;
     for (const [x, y] of pts) o += `<circle class="st-pt ${s.cls}" cx="${x}" cy="${y}" r="3"/>`;
     const [lx, ly, lp] = pts.at(-1);
@@ -2901,8 +2904,13 @@ function rendreStats() {
     const parN = [1, 2, 3, 4].map((n) => ({ n, v: moyenne(tours12.filter((x) => x.n === n).map((x) => x.d)), c: tours12.filter((x) => x.n === n).length })).filter((x) => x.c);
     const meil = tours12.length ? tours12.reduce((a, b) => (b.d < a.d ? b : a)) : null, pire = tours12.length ? tours12.reduce((a, b) => (b.d > a.d ? b : a)) : null;
     h += blocSt("Ton niveau tour par tour", "Score de chaque tour par rapport au SSS du parcours (moins = mieux) ; la courbe suit la moyenne des 5 derniers tours.", `
-      <div class="st-legende"><span><i class="c1"></i>moyenne glissante (5 tours)</span></div>
-      ${svgLignes({ series: [{ nom: "Moyenne 5 tours", cls: "c1", pts: tours.map((x, i) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +glis[i].toFixed(2), tip: `${sg(glis[i])} (tour ${x.n} de « ${esc(titre(x.nom))} » : ${x.score}, ${sg(x.d)})` })) }], fmt: (v) => sg(v), zero: true, h: 200 })}
+      <div class="st-legende"><span><i class="c1"></i>moyenne des 5 derniers tours</span><span><i class="pt c2"></i>chaque tour</span></div>
+      ${svgLignes({ series: [
+        { nom: "Tour", cls: "c2", points: true, pts: tours.map((x) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +x.d.toFixed(1), tip: `${x.score} (${sg(x.d)}), tour ${x.n} de « ${esc(titre(x.nom))} »` })) },
+        { nom: "Moyenne 5 tours", cls: "c1", pts: tours.map((x, i) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +glis[i].toFixed(2), tip: sg(glis[i]) })) }],
+        fmt: (v) => sg(v), zero: true, h: 240,
+        // l'axe descend au moins à −5 (et jusqu'à −12 au plus) : les tours sous le SSS doivent se voir
+        plancher: Math.max(-12, Math.min(-5, Math.floor(Math.min(...tours.map((x) => x.d))) - 1)) })}
       <div class="st-duo">
         <div><h4>Selon le tour de l'épreuve <small>(12 mois)</small></h4>
           ${svgColonnes({ barres: parN.map((x) => ({ lib: `Tour ${x.n}`, v: +x.v.toFixed(2), cls: "c1", tip: `<b>Tour ${x.n}</b><br>${sg(x.v, 2)} vs SSS en moyenne<br>${x.c} tours` })), fmt: (v) => sg(v), h: 160, W: 520 })}
