@@ -692,6 +692,20 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
 @media (max-width: 400px) { .c-vue { max-width: 92px; font-size: 12px; } }
 /* onglets qui défilent : léger fondu à droite pour signaler la suite */
 @media (max-width: 860px) { .bandeau-in .vues { mask-image: linear-gradient(90deg, #000 88%, transparent); -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); } }
+/* onglet Joueurs : tableau compact */
+.co-barre { margin: 10px 0; } .co-barre .co-cherche { flex: 1; min-width: 180px; max-width: 320px; margin: 0; }
+.co-barre select { height: 36px; border: 1px solid var(--bord); border-radius: 8px; background: var(--fond); }
+.co-selbarre { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .co-selbarre:not(:empty) { padding: 8px 10px; margin-bottom: 8px; background: #fbf0cc; border-radius: 10px; }
+.co-selbarre select { height: 32px; border: 1px solid var(--bord); border-radius: 8px; } .co-selbarre .btn { height: 32px; }
+.co-table table { width: 100%; } .co-table td { vertical-align: middle; }
+.co-table td:nth-child(2) { white-space: nowrap; } .co-table .s-nom { font-size: 14px; }
+.co-lic { display: block; color: var(--doux); font-size: 11.5px; }
+.co-mini { display: inline-block; font-size: 11.5px; background: var(--sauge-pale); border-radius: 999px; padding: 1px 8px; margin: 1px 0; white-space: nowrap; }
+.co-ajout-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin: 10px 0 14px; }
+.co-ajout-bloc { border: 1px solid var(--bord); border-radius: 12px; padding: 12px; } .co-ajout-bloc h4 { margin: 0 0 4px; } .co-ajout-bloc .meta { margin: 0 0 8px; }
+.co-ajout-bloc textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--bord); border-radius: 8px; background: var(--fond); padding: 8px; font: inherit; font-size: 13px; margin-bottom: 8px; }
+#co-ajout-pan[hidden] { display: none; }
+@media (max-width: 560px) { .co-table th:nth-child(4), .co-table td:nth-child(4), .co-table th:nth-child(6), .co-table td:nth-child(6) { display: none; } }
 
 </style>
 </head>
@@ -3174,50 +3188,112 @@ $("p-acces").addEventListener("change", (e) => {
 });
 
 // ---- onglet Coach (coachs et administrateur) : structure, joueurs suivis, invitations ; plus tard les équipes
-const co = { onglet: "joueurs", equipe: "", eqSel: "", annee: new Date().getFullYear(), candidats: {}, voir: 20 };
+const co = { onglet: "joueurs", equipe: "", eqSel: "", annee: new Date().getFullYear(), candidats: {}, voir: 50 };
 async function rendreCoach() {
   const box = $("co-contenu"); if (!box) return;
   if (Saison.role !== "coach" && Saison.role !== "admin") { box.innerHTML = "<div class='bloc vide'>Réservé aux coachs.</div>"; return; }
   box.innerHTML = `<div class="seg co-onglets" role="group" aria-label="Espace coach">${[["joueurs", "Joueurs"], ["equipes", "Équipes"], ["calendrier", "Calendrier d'équipe"]]
     .map(([k, v]) => `<button type="button" data-co-onglet="${k}" aria-pressed="${co.onglet === k}">${v}</button>`).join("")}</div><div id="co-corps"><p class="meta">Chargement…</p></div>`;
   const corps = $("co-corps");
-  try { corps.innerHTML = co.onglet === "equipes" ? await htmlEquipes() : co.onglet === "calendrier" ? await htmlCalendrierEquipe() : await htmlJoueurs(); }
+  try { corps.innerHTML = co.onglet === "equipes" ? await htmlEquipes() : co.onglet === "calendrier" ? await htmlCalendrierEquipe() : await htmlJoueurs();
+    if (co.onglet === "joueurs") majTableJoueurs(); }
   catch (e) { corps.innerHTML = `<div class="bloc vide">Lecture impossible : ${esc(e.message || String(e))}</div>`; }
 }
 const majMots = (x) => x.toLowerCase().replace(/(^|[\s/(-])(\p{L})/gu, (m, a, c) => a + c.toUpperCase());
 const infoJoueur = (j) => [j.categorie && majMots(j.categorie), j.naissance && `né${j.sexe === "D" ? "e" : ""} en ${j.naissance}`,
   j.index_golf != null && `index ${String(j.index_golf).replace(".", ",")}`].filter(Boolean).join(" · ");
+// ---- onglet Joueurs : tableau compact filtrable (clubs de 300 joueurs), ajout et rangement en masse
+const GROUPES = { U12: "U12", U14: "U14", U16: "U16", Adultes: "Adultes", Mid: "Mid-Am (25+)", Seniors: "Seniors (50+)" };
+function groupeDe(j) {
+  if (!j.naissance) return "";
+  const a = new Date().getFullYear() - j.naissance;
+  return a <= 12 ? "U12" : a <= 14 ? "U14" : a <= 16 ? "U16" : a < 25 ? "Adultes" : a < 50 ? "Mid" : "Seniors";
+}
 async function htmlJoueurs() {
-  const J = await sb.rpc("mes_joueurs");
-  const lib = { demande: "en attente", accepte: "accès accordé", refuse: "refusé" };
-  let h = "";
-  {
-    const joueurs = J.data || [];
-    const st = Saison.structure || {};
-    h += `<form class="bloc p-bloc ${st.type && st.nom ? "" : "p-parent"}" id="p-structure"><h3>Ma structure</h3>
+  const [J, E] = await Promise.all([sb.rpc("mes_joueurs"), sb.from("equipes").select("id,nom,equipe_joueurs(joueur_id)").order("nom")]);
+  const joueurs = J.data || [], equipes = E.data || [];
+  const eqDe = {}; for (const e of equipes) for (const m of e.equipe_joueurs || []) (eqDe[m.joueur_id] ||= []).push(e);
+  co.data = { joueurs, equipes, eqDe };
+  co.f ||= { q: "", groupe: "", sexe: "", eq: "", statut: "", tri: "nom" };
+  co.sel ||= new Set();
+  const st = Saison.structure || {}, f = co.f;
+  const opt = (v, l, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`;
+  return `<form class="bloc p-bloc ${st.type && st.nom ? "" : "p-parent"}" id="p-structure"><h3>Ma structure</h3>
       <p class="meta">Les joueurs et les parents la voient dans ta demande d'accès : ils doivent savoir qui tu représentes. Obligatoire pour demander un accès.</p>
-      <div class="c-form"><select id="p-st-type" aria-label="Type de structure"><option value="">Type…</option>${Object.entries(STRUCTURES).map(([k, v]) =>
-        `<option value="${k}" ${k === st.type ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <div class="c-form"><select id="p-st-type" aria-label="Type de structure"><option value="">Type…</option>${Object.entries(STRUCTURES).map(([k, v]) => opt(k, v, st.type)).join("")}</select>
         <input id="p-st-nom" maxlength="80" placeholder="ex. Golf de Massane, Ligue Occitanie, Académie…" value="${esc(st.nom || "")}" aria-label="Nom de la structure">
-        <button type="submit" class="btn plein">Enregistrer</button></div></form>`;
-    h += `<div class="bloc p-bloc"><h3>Mes joueurs</h3>
-      <form class="c-form" id="p-demande"><input id="p-demande-lic" inputmode="numeric" placeholder="licence ffgolf du joueur" aria-label="Licence du joueur" required>
-        <input id="p-demande-nom" type="text" maxlength="60" placeholder="nom du joueur (pour toi)" aria-label="Nom du joueur">
-        <button type="submit" class="btn plein">Demander l'accès</button></form>
-      <p class="meta">Le joueur (ou son parent) reçoit ta demande dans son profil et l'accepte ou non. Sans compte GolfNexus, rien ne se passe : invite-le ci-dessous.</p>
-      <form class="c-form" id="p-inviter"><input id="p-inv-email" type="email" placeholder="e-mail du joueur (du parent si moins de 18 ans)" aria-label="E-mail du joueur" required>
-        <input id="p-inv-nom" type="text" maxlength="60" placeholder="nom du joueur" aria-label="Nom du joueur">
-        <label class="p-inv-mineur"><input id="p-inv-mineur" type="checkbox"> moins de 18 ans</label>
-        <button type="submit" class="btn">Inviter</button></form>
-      <p class="meta">Il reçoit un e-mail GolfNexus ; à son inscription, ta demande de suivi l'attend : il (ou son parent) n'a qu'à l'accepter.</p>
-      ${joueurs.length > 10 ? `<input type="search" class="co-cherche" data-filtre="co-liste-joueurs" placeholder="Rechercher dans mes ${joueurs.length} joueurs : nom, prénom, licence, catégorie…" aria-label="Rechercher un joueur" autocomplete="off">` : ""}
-      <div id="co-liste-joueurs">${joueurs.slice().sort((a, b) => (a.statut === "demande") - (b.statut === "demande") || (a.nom || a.libelle || "").localeCompare(b.nom || b.libelle || "", "fr"))
-        .map((j, k) => `<div class="acces-ligne${k >= co.voir ? " au-dela" : ""}" data-q="${esc(plier([j.nom, j.libelle, j.licence, j.categorie].filter(Boolean).join(" ")))}"><div class="qui"><b>${esc(j.nom || j.libelle || "Joueur")}</b><small>${j.statut === "accepte" && infoJoueur(j) ? esc(infoJoueur(j)) + " · " : ""}licence ${esc(j.licence || "—")} · demandé le ${fmtDate(String(j.demande_le).slice(0, 10))}</small></div>
-        <span class="statut-acces ${j.statut}">${lib[j.statut]}</span>
-        ${j.statut === "accepte" ? `<button type="button" class="btn plein" data-voir="${esc(j.joueur_id)}">Voir sa saison</button>` : ""}
-        <button type="button" class="btn" data-acces-coach-fin="${esc(j.joueur_id)}">${j.statut === "accepte" ? "Ne plus suivre" : "Annuler"}</button></div>`).join("")}</div>${joueurs.length > co.voir ? `<button type="button" class="lien co-plus" data-co-plus>Afficher les ${joueurs.length - co.voir} autres</button>` : ""}</div>`;
-  }
-  return h;
+        <button type="submit" class="btn plein">Enregistrer</button></div></form>
+    <div class="bloc"><div class="co-eq-tete"><h3>Mes joueurs <small>${joueurs.filter((x) => x.statut === "accepte").length} suivis${joueurs.some((x) => x.statut === "demande") ? ` · ${joueurs.filter((x) => x.statut === "demande").length} en attente` : ""}</small></h3>
+      <button type="button" class="btn plein" id="co-ajout-bascule" aria-expanded="${!!co.ajoutOuvert}">+ Ajouter des joueurs</button></div>
+      <div id="co-ajout-pan" ${co.ajoutOuvert ? "" : "hidden"}>${panneauAjout()}</div>
+      <div class="co-filtres co-barre">
+        <input type="search" id="co-f-q" class="co-cherche" placeholder="Nom, prénom, licence…" value="${esc(f.q)}" aria-label="Rechercher" autocomplete="off">
+        <select id="co-f-groupe" aria-label="Catégorie">${opt("", "Toutes catégories", f.groupe)}${Object.entries(GROUPES).map(([k, v]) => opt(k, v, f.groupe)).join("")}</select>
+        <select id="co-f-sexe" aria-label="Sexe">${opt("", "Tous", f.sexe)}${opt("H", "Messieurs / garçons", f.sexe)}${opt("D", "Dames / filles", f.sexe)}</select>
+        <select id="co-f-eq" aria-label="Équipe">${opt("", "Toutes équipes", f.eq)}${opt("-", "Sans équipe", f.eq)}${equipes.map((e) => opt(e.id, e.nom, f.eq)).join("")}</select>
+        <select id="co-f-statut" aria-label="Statut">${opt("", "Tous statuts", f.statut)}${opt("accepte", "Accès accordé", f.statut)}${opt("demande", "En attente", f.statut)}</select>
+        <select id="co-f-tri" aria-label="Trier par">${opt("nom", "Tri : nom", f.tri)}${opt("index", "Tri : index", f.tri)}${opt("groupe", "Tri : catégorie", f.tri)}</select>
+      </div>
+      <div class="co-selbarre" id="co-selbarre"></div>
+      <div class="st-table co-table"><table><thead><tr><th><input type="checkbox" id="co-tout" aria-label="Tout sélectionner"></th><th>Joueur</th><th>Catégorie</th><th>Index</th><th>Équipes</th><th>Statut</th><th></th></tr></thead>
+        <tbody id="co-tbody"></tbody></table></div>
+      <div id="co-pied"></div></div>`;
+}
+function panneauAjout() {
+  return `<div class="co-ajout-grille">
+    <form class="co-ajout-bloc" id="p-demande"><h4>Demander l'accès</h4><p class="meta">Le joueur (ou son parent) accepte dans son profil.</p>
+      <div class="c-form"><input id="p-demande-lic" inputmode="numeric" placeholder="licence ffgolf" aria-label="Licence du joueur" required>
+      <input id="p-demande-nom" maxlength="60" placeholder="nom (pour toi)" aria-label="Nom du joueur"><button type="submit" class="btn plein">Demander</button></div></form>
+    <div class="co-ajout-bloc"><h4>Demandes en masse</h4><p class="meta">Colle des licences (une par ligne, ou copiées d'un tableur).</p>
+      <textarea id="co-masse-lic" rows="4" placeholder="533104300&#10;123456789&#10;…" aria-label="Licences"></textarea>
+      <button type="button" class="btn plein" id="co-masse-dem">Envoyer les demandes</button></div>
+    <form class="co-ajout-bloc" id="p-inviter"><h4>Inviter (pas encore de compte)</h4><p class="meta">E-mail GolfNexus ; ta demande de suivi l'attend à l'inscription.</p>
+      <div class="c-form"><input id="p-inv-email" type="email" placeholder="e-mail (du parent si moins de 18 ans)" aria-label="E-mail" required>
+      <input id="p-inv-nom" maxlength="60" placeholder="nom du joueur" aria-label="Nom du joueur">
+      <label class="p-inv-mineur"><input id="p-inv-mineur" type="checkbox"> moins de 18 ans</label><button type="submit" class="btn">Inviter</button></div></form>
+    <div class="co-ajout-bloc"><h4>Invitations en masse</h4><p class="meta">Une ligne par joueur : <code>e-mail ; nom ; mineur</code> (« mineur » si moins de 18 ans).</p>
+      <textarea id="co-masse-inv" rows="4" placeholder="parent.leo@exemple.fr ; Léo Martin ; mineur&#10;paul.durand@exemple.fr ; Paul Durand" aria-label="Invitations"></textarea>
+      <button type="button" class="btn" id="co-masse-invit">Envoyer les invitations</button></div>
+  </div>`;
+}
+function joueursFiltres() {
+  const { joueurs, eqDe } = co.data || { joueurs: [], eqDe: {} }, f = co.f;
+  const mots = plier(f.q).trim().split(/\s+/).filter(Boolean);
+  const L = joueurs.filter((j) => {
+    if (f.statut && j.statut !== f.statut) return false;
+    if (f.sexe && j.sexe !== f.sexe) return false;
+    if (f.groupe && groupeDe(j) !== f.groupe) return false;
+    if (f.eq === "-" && (eqDe[j.joueur_id] || []).length) return false;
+    if (f.eq && f.eq !== "-" && !(eqDe[j.joueur_id] || []).some((e) => e.id === f.eq)) return false;
+    if (mots.length) { const q = plier([j.nom, j.libelle, j.licence, j.categorie].filter(Boolean).join(" ")); if (!mots.every((w) => q.includes(w))) return false; }
+    return true;
+  });
+  const nom = (j) => j.nom || j.libelle || "";
+  const ordreG = Object.keys(GROUPES);
+  return L.sort((a, b) => f.tri === "index" ? (a.index_golf ?? 99) - (b.index_golf ?? 99) || nom(a).localeCompare(nom(b), "fr")
+    : f.tri === "groupe" ? ordreG.indexOf(groupeDe(a)) - ordreG.indexOf(groupeDe(b)) || nom(a).localeCompare(nom(b), "fr")
+    : nom(a).localeCompare(nom(b), "fr"));
+}
+function majTableJoueurs() {
+  const tb = $("co-tbody"); if (!tb) return;
+  const L = joueursFiltres(), { eqDe, equipes } = co.data, vus = L.slice(0, co.voir);
+  const lib = { demande: "en attente", accepte: "accordé", refuse: "refusé" };
+  tb.innerHTML = vus.map((j) => { const ok = j.statut === "accepte";
+    return `<tr><td>${ok ? `<input type="checkbox" class="co-sel" data-j="${esc(j.joueur_id)}" ${co.sel.has(j.joueur_id) ? "checked" : ""} aria-label="Sélectionner">` : ""}</td>
+      <td>${ok ? `<button type="button" class="s-nom" data-voir="${esc(j.joueur_id)}" title="Voir sa saison">${esc(j.nom || j.libelle || "joueur")}</button>` : `<b>${esc(j.libelle || "Joueur")}</b>`}<small class="co-lic">${esc(j.licence || "")}</small></td>
+      <td>${ok ? esc([j.categorie && majMots(j.categorie), j.naissance].filter(Boolean).join(" · ")) : "—"}</td>
+      <td>${ok && j.index_golf != null ? String(j.index_golf).replace(".", ",") : "—"}</td>
+      <td>${(eqDe[j.joueur_id] || []).map((e) => `<span class="co-mini">${esc(e.nom)}</span>`).join(" ") || (ok ? `<span class="meta">—</span>` : "")}</td>
+      <td><span class="statut-acces ${j.statut}">${lib[j.statut]}</span></td>
+      <td><button type="button" class="lien" data-acces-coach-fin="${esc(j.joueur_id)}">${ok ? "Ne plus suivre" : "Annuler"}</button></td></tr>`; }).join("")
+    || `<tr><td colspan="7" class="meta">${(co.data.joueurs || []).length ? "Aucun joueur pour ces critères." : "Aucun joueur : clique sur « + Ajouter des joueurs »."}</td></tr>`;
+  $("co-pied").innerHTML = `<p class="meta">${L.length} joueur${L.length > 1 ? "s" : ""}${L.length > co.voir ? ` · ${co.voir} affichés <button type="button" class="lien" data-co-plus>Afficher ${Math.min(100, L.length - co.voir)} de plus</button>` : ""}</p>`;
+  const tout = $("co-tout"), sel = vus.filter((j) => j.statut === "accepte");
+  tout.checked = sel.length > 0 && sel.every((j) => co.sel.has(j.joueur_id));
+  const n = co.sel.size;
+  $("co-selbarre").innerHTML = n ? `<b>${n} sélectionné${n > 1 ? "s" : ""}</b> · Ajouter à l'équipe
+    <select id="co-sel-eq">${equipes.map((e) => `<option value="${esc(e.id)}">${esc(e.nom)}</option>`).join("")}</select>
+    <button type="button" class="btn plein" id="co-sel-ok">Ajouter</button> <button type="button" class="lien" id="co-sel-vider">Désélectionner</button>` : "";
 }
 
 // ---- Équipes : le coach range ses joueurs (accès accepté) ; un joueur peut être dans plusieurs équipes
@@ -3332,7 +3408,41 @@ $("co-contenu").addEventListener("click", async (e) => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.coOnglet) { co.onglet = b.dataset.coOnglet; rendreCoach(); return; }
   if (b.dataset.eqSel) { co.eqSel = b.dataset.eqSel; rendreCoach(); return; }
-  if ("coPlus" in b.dataset) { co.voir += 50; rendreCoach(); return; }
+  if ("coPlus" in b.dataset) { co.voir += 100; majTableJoueurs(); return; }
+  if (b.id === "co-ajout-bascule") { co.ajoutOuvert = !co.ajoutOuvert; $("co-ajout-pan").hidden = !co.ajoutOuvert; b.setAttribute("aria-expanded", co.ajoutOuvert); return; }
+  if (b.id === "co-sel-vider") { co.sel.clear(); majTableJoueurs(); return; }
+  if (b.id === "co-sel-ok") {
+    const eq = $("co-sel-eq").value, ids = [...co.sel];
+    const { error } = await sb.from("equipe_joueurs").upsert(ids.map((j) => ({ equipe_id: eq, joueur_id: j })), { onConflict: "equipe_id,joueur_id", ignoreDuplicates: true });
+    signaler(error ? "Impossible : " + error.message : `${ids.length} joueur${ids.length > 1 ? "s" : ""} ajouté${ids.length > 1 ? "s" : ""} à l'équipe.`);
+    if (!error) co.sel.clear();
+    rendreCoach(); return;
+  }
+  if (b.id === "co-masse-dem") {
+    const lics = $("co-masse-lic").value.split(/[\s,;]+/).map((x) => x.replace(/\D/g, "")).filter((x) => /^\d{6,12}$/.test(x));
+    if (!lics.length) { signaler("Aucune licence reconnue (6 à 12 chiffres)."); return; }
+    b.disabled = true;
+    const { data, error } = await sb.rpc("demander_acces_masse", { lics: [...new Set(lics)] });
+    b.disabled = false;
+    signaler(error ? (/structure_manquante/.test(error.message) ? "Renseigne d'abord ta structure." : "Impossible : " + error.message)
+      : `${data} demande${data > 1 ? "s" : ""} envoyée${data > 1 ? "s" : ""}. Les joueurs qui ont un compte GolfNexus les verront dans leur profil.`);
+    if (!error) $("co-masse-lic").value = "";
+    rendreCoach(); return;
+  }
+  if (b.id === "co-masse-invit") {
+    const lignes = $("co-masse-inv").value.split("\n").map((l) => l.split(/[;\t]/).map((x) => x.trim())).filter((x) => x[0] && x[0].includes("@"));
+    if (!lignes.length) { signaler("Aucune ligne avec un e-mail."); return; }
+    b.disabled = true; let ok = 0; const ko = [];
+    for (const [email, nom, m] of lignes) {
+      b.textContent = `Envoi ${ok + ko.length + 1}/${lignes.length}…`;
+      const err = await inviter(email.toLowerCase(), /mineur|oui|x|1/i.test(m || "") ? "mineur" : "joueur", nom || "");
+      if (err) ko.push(`${email} (${err})`); else ok++;
+    }
+    b.disabled = false; b.textContent = "Envoyer les invitations";
+    signaler(`${ok} invitation${ok > 1 ? "s" : ""} envoyée${ok > 1 ? "s" : ""}` + (ko.length ? ` · ${ko.length} en échec : ${ko.slice(0, 3).join(", ")}${ko.length > 3 ? "…" : ""}` : "."));
+    if (!ko.length) $("co-masse-inv").value = "";
+    return;
+  }
   if (b.dataset.coOuvrir) { const t = tournoiDe(b.dataset.coOuvrir); if (t) ouvrir(t); return; }
   if (b.dataset.eqCal) { co.equipe = b.dataset.eqCal; co.onglet = "calendrier"; rendreCoach(); return; }
   if (b.id === "co-eq-types") {
@@ -3356,6 +3466,7 @@ $("co-contenu").addEventListener("click", async (e) => {
 });
 // recherche dans les joueurs à ajouter (seulement ceux qui correspondent à l'équipe)
 $("co-contenu").addEventListener("input", (e) => {
+  if (e.target.id === "co-f-q") { co.f.q = e.target.value; co.voir = 50; majTableJoueurs(); return; }
   if (e.target.dataset.filtre) {   // filtre d'une liste affichée (membres, joueurs suivis)
     const q = plier(e.target.value).trim().split(/\s+/).filter(Boolean);
     for (const l of document.querySelectorAll(`#${CSS.escape(e.target.dataset.filtre)} [data-q]`)) l.hidden = !!q.length && !q.every((w) => l.dataset.q.includes(w));
@@ -3366,6 +3477,11 @@ $("co-contenu").addEventListener("input", (e) => {
   document.querySelector(`[data-eq-props="${CSS.escape(id)}"]`).innerHTML = resultatsAjout(id, e.target.value);
 });
 $("co-contenu").addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.classList.contains("co-sel")) { t.checked ? co.sel.add(t.dataset.j) : co.sel.delete(t.dataset.j); majTableJoueurs(); return; }
+  if (t.id === "co-tout") { for (const c of document.querySelectorAll(".co-sel")) { c.checked = t.checked; t.checked ? co.sel.add(c.dataset.j) : co.sel.delete(c.dataset.j); } majTableJoueurs(); return; }
+  const k = { "co-f-groupe": "groupe", "co-f-sexe": "sexe", "co-f-eq": "eq", "co-f-statut": "statut", "co-f-tri": "tri" }[t.id];
+  if (k) { co.f[k] = t.value; co.voir = 50; majTableJoueurs(); return; }
   if (e.target.id === "co-cal-eq") { co.equipe = e.target.value; rendreCoach(); }
   if (e.target.id === "co-eq-liste") { co.eqSel = e.target.value; rendreCoach(); }
   if (e.target.id === "co-cal-an") { co.annee = +e.target.value; rendreCoach(); }
