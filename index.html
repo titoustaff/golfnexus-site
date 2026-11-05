@@ -745,6 +745,20 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
 /* Mes stats sur téléphone : tableaux qui passent à la ligne */
 .st-simu { table-layout: fixed; } .st-simu th { white-space: normal !important; } .st-simu td:first-child { width: 36%; }
 @media (max-width: 560px) { .st-simu td, .st-simu th { padding: 6px 4px; font-size: 12.5px; } .st-simu td:first-child { white-space: normal; } }
+/* ---------------------------------------------------------------- accueil guidé (premières étapes) */
+.bienvenue { background: var(--carte); border-radius: 14px; box-shadow: var(--ombre); padding: 14px 16px; margin: 12px 0; border: 2px solid var(--jaune); }
+.bienvenue[hidden] { display: none; }
+.bv-tete { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .bv-tete h2 { margin: 0; font-size: 18px; color: var(--vert); flex: 1; }
+.bv-prog { font-weight: 800; color: var(--vert); }
+.bv-barre { height: 6px; background: var(--sauge-pale); border-radius: 999px; margin: 8px 0 10px; overflow: hidden; } .bv-barre span { display: block; height: 100%; background: var(--vert-2); border-radius: 999px; }
+.bv-etapes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.bv-etapes li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--bord); border-radius: 10px; }
+.bv-etapes li > div { flex: 1; min-width: 0; } .bv-etapes small { display: block; color: var(--doux); font-size: 12px; }
+.bv-etapes li.ok { opacity: .6; } .bv-etapes li.ok b { text-decoration: line-through; }
+.bv-coche { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; background: var(--sauge-pale); color: var(--vert); flex: none; }
+.bv-etapes li.ok .bv-coche { background: var(--vert-2); color: #fff; }
+.bv-etapes .btn { height: 32px; padding: 0 12px; flex: none; }
+.bienvenue > .meta { margin: 10px 0 0; }
 
 </style>
 </head>
@@ -818,6 +832,7 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
 
   <div id="ecran-tournois">
 
+  <section class="bienvenue" id="bienvenue" hidden aria-label="Bien démarrer"></section>
   <section class="haut" aria-label="En bref">
     <button type="button" class="prochain" id="prochain"></button>
     <div class="kpis" id="kpis"></div>
@@ -1934,6 +1949,7 @@ const Saison = {
     for (const [k, v] of Object.entries(this.fiche)) if (v === null || v === "" || v === undefined) delete this.fiche[k];
     if (this.mode === "compte") this.base(sb.from("profils").update({ fiche: this.fiche, modifie_le: new Date().toISOString() }).eq("id", this.user.id), "profil");
     else lsSet("gn-profil", JSON.stringify(this.fiche));
+    setTimeout(() => rendreBienvenue(), 0);   // l'accueil guidé coche l'étape
   },
   setDomicile(d) {
     this.dom = d;
@@ -2072,6 +2088,7 @@ function toutRafraichir() {
   if (etat.ecran === "profil") rendreProfil();
 }
 function majBadgeSaison() {
+  setTimeout(() => rendreBienvenue(), 0);
   const an = new Date().getFullYear();
   const n = Saison.entrees(Saison.active(an)).length;
   const b = $("nb-saison"); b.hidden = !n; b.textContent = n;
@@ -2110,6 +2127,7 @@ function rendreCompte() {
   document.body.classList.toggle("lecture-seule", !!Saison.demo);   // vue coach : boutons de modification masqués
   if (!connecte && ["profil", "stats", "admin", "coach"].includes(etat.ecran)) ecran("tournois");
   pan.hidden = !compte.ouvert;
+  rendreBienvenue();
   const vb = $("vue-bandeau");
   vb.hidden = !(connecte && Saison.demo?.coach);
   $("saison").hidden = !vb.hidden;   // dans l'en-tête, la ligne « vue joueur » remplace l'avancée de la saison
@@ -2640,6 +2658,7 @@ $("ecran-profil").addEventListener("click", async (e) => {
       Saison.setFiche({ sexe: rech2.sexe, nom: Saison.fiche.nom || titre(`${x.PRENOM} ${x.NOM}`), club: Saison.fiche.club || titre(x.GOLF || "") });
       await majMerite(x.CODE, { nom: x.NOM, prenom: x.PRENOM });
       rech2.resultats = null; signaler("Fiche Mérite reliée : ton index et ta moyenne sont remplis.");
+      lancerReleve(true);   // historique Mérite et places obtenues sans attendre lundi
     } catch (err) { signaler("Lecture de la fiche impossible : " + (err.message || err)); }
     rendreProfil(); return;
   }
@@ -2688,7 +2707,7 @@ $("p-form").addEventListener("change", async (e) => {
     const { data, error } = await sb.from("profils").update({ licence: n || null }).eq("id", Saison.user.id).select("licence,licence_le,licence_verif").maybeSingle();
     if (error) signaler(/licence_verrouillee/.test(error.message) ? "Licence verrouillée : " + error.message.replace(/.*modifiable/, "modifiable") : "Enregistrement impossible : " + error.message);
     else { Saison.licence = { num: data.licence || "", le: data.licence_le, verif: data.licence_verif }; Saison.resultats = {};
-      signaler(n ? "Licence enregistrée : tes places obtenues apparaîtront dans Ma saison après le passage du lundi." : "Licence retirée."); }
+      signaler(n ? "Licence enregistrée." : "Licence retirée."); if (n) lancerReleve(true); }
     rendreProfil(); return;
   }
   if (id === "p-circuit") { Saison.setFiche({ circuit: e.target.value }); circuitDuProfil(true); rendre(); rendreProfil(); return; }
@@ -2873,7 +2892,8 @@ function rendreStats() {
   $("st-listes").innerHTML = listes.length > 1 ? listes.map((l) => `<button type="button" data-st-liste="${l}" aria-pressed="${l === st.liste}">${LISTES_M[l] || l}</button>`).join("") : "";
   const C = $("st-contenu");
   if (!f.merite) { C.innerHTML = `<div class="bloc vide">Choisis d'abord ta fiche Mérite dans <button type="button" class="lien" data-ecran-profil>Mon profil</button> : tes statistiques en viennent.</div>`; return; }
-  if (!listes.length) { C.innerHTML = `<div class="bloc vide">Ton historique Mérite n'est pas encore relevé : il l'est chaque lundi (depuis décembre 2024). Reviens après le prochain passage.</div>`; return; }
+  if (!listes.length) { C.innerHTML = `<div class="bloc vide">Ton historique Mérite n'est pas encore relevé (il l'est chaque lundi, depuis décembre 2024).
+    ${Saison.demo ? "" : `<p><button type="button" class="btn plein" id="st-releve">Lancer mon relevé maintenant</button></p><p class="meta">1 à 2 minutes ; une fois par jour au plus.</p>`}</div>`; return; }
   const M = S.mois.filter((m) => m.liste === st.liste).sort((a, b) => a.mois.localeCompare(b.mois));
   const T = S.tournois.filter((t) => t.liste === st.liste).sort((a, b) => a.date.localeCompare(b.date));
   const der = M.at(-1), avant = M.at(-2);
@@ -3613,6 +3633,74 @@ $("ecran-admin").addEventListener("change", async (e) => {
   const { error } = await sb.rpc("admin_role", { uid: id, r: role, m: mineur });
   signaler(error ? "Modification impossible : " + error.message : "Compte mis à jour.");
   rendreAdmin();
+});
+
+// ------------------------------------------------------------------ relevé immédiat et accueil guidé (05/11)
+// Relevé immédiat : la fonction Edge « releve » lance la tâche GitHub du relevé pour CE compte (au plus 1 / 24 h,
+// pour ménager ffgolf) ; on recharge les données du compte 90 s puis 3 min après.
+let releveEnCours = false;
+async function lancerReleve(auto = false) {
+  if (!sb || Saison.mode !== "compte" || Saison.demo || releveEnCours) return;
+  const { data, error } = await sb.functions.invoke("releve");
+  const corps = error ? await error.context?.json?.().catch(() => null) : data;
+  if (error) {
+    if (!auto) signaler(corps?.prochain ? `Relevé déjà fait aujourd'hui : prochain possible ${new Date(corps.prochain).toLocaleString("fr-FR", { weekday: "long", hour: "2-digit", minute: "2-digit" })}.`
+      : "Relevé impossible pour l'instant : " + (corps?.erreur || error.message));
+    return;
+  }
+  releveEnCours = true; Saison.releve = "en cours"; rendreBienvenue();
+  signaler("Relevé lancé : tes places obtenues et tes stats arrivent dans 1 à 2 minutes.");
+  for (const attente of [90e3, 90e3, 120e3]) {
+    await new Promise((r) => setTimeout(r, attente));
+    if (Saison.demo || !Saison.moi) break;
+    try { await Saison.connecter(Saison.moi); } catch { continue; }
+    if ((Saison.stats?.mois || []).length) break;
+  }
+  releveEnCours = false; Saison.releve = (Saison.stats?.mois || []).length ? "fait" : null;
+  toutRafraichir(); rendreBienvenue();
+  if (etat.ecran === "stats") rendreStats(); else if (etat.ecran === "saison") rendreSaison();
+  if (Saison.releve === "fait") signaler("Relevé terminé : « Mes stats » et tes places obtenues sont à jour.");
+}
+document.addEventListener("click", (e) => { if (e.target.id === "st-releve") lancerReleve(false); });
+
+// Accueil guidé : les premières étapes, cochées au fur et à mesure ; disparaît une fois tout fait (ou masqué)
+function etapesAccueil() {
+  const f = Saison.fiche || {}, coach = Saison.role === "coach" || Saison.role === "admin";
+  const aTournoi = Object.values(Saison.items || {}).some((o) => Object.keys(o || {}).length);
+  const E = [];
+  if (Saison.mineur) E.push({ ok: !!Saison.parentValide, t: "Valide le compte en tant que parent", d: "obligatoire pour un joueur de moins de 18 ans", go: "profil" });
+  if (coach) {
+    E.push({ ok: !!(Saison.structure?.type && Saison.structure?.nom), t: "Indique ta structure", d: "club, ligue, académie : les joueurs doivent savoir qui tu es", go: "coach" });
+    E.push({ ok: (Saison.joueurs || []).length > 0, t: "Ajoute tes premiers joueurs", d: "par leur licence, ou invite-les par e-mail", go: "coach" });
+  }
+  if (!coachSeul()) {
+    E.push({ ok: !!f.merite, t: "Trouve ta fiche Mérite", d: "index, moyenne vs SSS : sert à estimer ta place", go: "profil" });
+    E.push({ ok: !!Saison.licence?.num, t: "Saisis ta licence ffgolf", d: "pour retrouver tes places obtenues et tes stats", go: "profil", focus: "p-licence" });
+  }
+  E.push({ ok: !!f.cp, t: "Ton code postal", d: "pour les distances jusqu'aux golfs", go: "profil", focus: "p-cp" });
+  if (!coachSeul()) E.push({ ok: aTournoi, t: "Choisis tes premiers tournois", d: "l'étoile ☆ d'un tournoi l'ajoute à « Ma saison »", go: "tournois" });
+  return E;
+}
+function rendreBienvenue() {
+  const box = $("bienvenue"); if (!box) return;
+  const f = Saison.fiche || {};
+  if (Saison.mode !== "compte" || Saison.demo || f.accueilFini) { box.hidden = true; return; }
+  const E = etapesAccueil(), faits = E.filter((x) => x.ok).length;
+  if (faits === E.length && Saison.releve !== "en cours") { box.hidden = true; return; }
+  box.hidden = false;
+  const statsPret = (Saison.stats?.mois || []).length > 0;
+  box.innerHTML = `<div class="bv-tete"><h2>Bienvenue sur GolfNexus${f.nom ? `, ${esc(String(f.nom).split(" ")[0])}` : ""} 👋</h2>
+      <span class="bv-prog">${faits} / ${E.length}</span><button type="button" class="lien" id="bv-masquer">Masquer</button></div>
+    <div class="bv-barre"><span style="width:${Math.round((100 * faits) / E.length)}%"></span></div>
+    <ol class="bv-etapes">${E.map((x, i) => `<li class="${x.ok ? "ok" : ""}"><span class="bv-coche">${x.ok ? "✓" : i + 1}</span>
+      <div><b>${x.t}</b><small>${x.d}</small></div>${x.ok ? "" : `<button type="button" class="btn" data-bv-go="${x.go}" data-bv-focus="${x.focus || ""}">Faire</button>`}</li>`).join("")}</ol>
+    ${!coachSeul() && Saison.licence?.num && f.merite ? `<p class="meta">${Saison.releve === "en cours" ? "⏳ Relevé en cours : tes stats arrivent dans 1 à 2 minutes."
+      : statsPret ? "✓ Tes stats sont prêtes : onglet « Mes stats »." : `Tes stats se remplissent au relevé du lundi. <button type="button" class="lien" id="st-releve">Lancer mon relevé maintenant</button>`}</p>` : ""}`;
+}
+$("bienvenue").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "bv-masquer") { Saison.setFiche({ accueilFini: true }); rendreBienvenue(); return; }
+  if (b.dataset.bvGo) { ecran(b.dataset.bvGo); const f = b.dataset.bvFocus && $(b.dataset.bvFocus); if (f) setTimeout(() => { f.scrollIntoView({ block: "center" }); f.focus(); }, 50); }
 });
 
 demarrage();
