@@ -641,6 +641,12 @@ body.lecture-seule .note { pointer-events: none; background: transparent; border
 .co-props { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 160px; overflow-y: auto; }
 .co-prop { border: 1px dashed var(--vert-2); background: none; color: var(--vert); border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 13px; font-weight: 600; }
 .co-prop:hover { background: var(--sauge-pale); } .co-prop small { font-weight: 500; color: var(--doux); } .co-prop[hidden] { display: none; }
+.co-eq-onglets { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; align-items: center; }
+.co-eq-onglets button { border: 1px solid var(--bord); background: var(--carte); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--texte); }
+.co-eq-onglets button small { margin-left: 4px; font-weight: 600; color: var(--doux); background: var(--sauge-pale); border-radius: 999px; padding: 0 6px; }
+.co-eq-onglets button[aria-selected=true] { background: var(--vert); color: #fff; border-color: var(--vert); } .co-eq-onglets button[aria-selected=true] small { background: rgba(255,255,255,.2); color: #fff; }
+.co-eq-onglets button.nouvelle { border-style: dashed; color: var(--vert-2); } .co-eq-onglets button.nouvelle[aria-selected=true] { color: #fff; }
+.co-eq-onglets select { height: 36px; min-width: 260px; border: 1px solid var(--bord); border-radius: 8px; background: var(--carte); font-weight: 600; }
 
 </style>
 </head>
@@ -3107,7 +3113,7 @@ const rafraichirAcces = () => (etat.ecran === "coach" ? rendreCoach() : rendreAc
 for (const id of ["p-acces", "co-contenu"]) { $(id).addEventListener("click", clicAcces); $(id).addEventListener("submit", envoiAcces); }
 
 // ---- onglet Coach (coachs et administrateur) : structure, joueurs suivis, invitations ; plus tard les équipes
-const co = { onglet: "joueurs", equipe: "", annee: new Date().getFullYear() };
+const co = { onglet: "joueurs", equipe: "", eqSel: "", annee: new Date().getFullYear() };
 async function rendreCoach() {
   const box = $("co-contenu"); if (!box) return;
   if (Saison.role !== "coach" && Saison.role !== "admin") { box.innerHTML = "<div class='bloc vide'>Réservé aux coachs.</div>"; return; }
@@ -3178,11 +3184,22 @@ async function htmlEquipes() {
   const ordre = (n) => { const i = EQUIPES_TYPES.indexOf(n); return i < 0 ? 99 : i; };
   E.data = (E.data || []).sort((a, b) => ordre(a.nom) - ordre(b.nom) || a.nom.localeCompare(b.nom, "fr"));
   const ok = (J.data || []).filter((j) => j.statut === "accepte"), nomDe = (id) => ok.find((j) => j.joueur_id === id);
-  let h = `<form class="bloc c-form" id="co-eq-form"><input id="co-eq-nom" maxlength="60" required placeholder="nouvelle équipe (ex. Équipe 1, U16, Mid-Am)" aria-label="Nom de l'équipe">
-    <button type="submit" class="btn plein">Créer l'équipe</button>
-    ${EQUIPES_TYPES.some((n) => !(E.data || []).some((e) => e.nom === n)) ? `<button type="button" class="btn" id="co-eq-types">Ajouter les équipes types</button>` : ""}</form>`;
+  // une équipe à la fois : onglets (≤ 8 équipes) ou liste déroulante au-delà ; « + Nouvelle équipe » = création
+  const eqs = E.data || [];
+  if (co.eqSel !== "nouvelle" && !eqs.some((e) => e.id === co.eqSel)) co.eqSel = eqs[0]?.id || "nouvelle";
+  const n = (e) => (e.equipe_joueurs || []).length;
+  let h = eqs.length <= 8
+    ? `<div class="co-eq-onglets" role="tablist">${eqs.map((e) => `<button type="button" role="tab" data-eq-sel="${esc(e.id)}" aria-selected="${e.id === co.eqSel}">${esc(e.nom)} <small>${n(e)}</small></button>`).join("")}
+       <button type="button" role="tab" class="nouvelle" data-eq-sel="nouvelle" aria-selected="${co.eqSel === "nouvelle"}">+ Nouvelle équipe</button></div>`
+    : `<div class="co-eq-onglets"><select id="co-eq-liste" aria-label="Équipe">${eqs.map((e) => `<option value="${esc(e.id)}" ${e.id === co.eqSel ? "selected" : ""}>${esc(e.nom)} (${n(e)})</option>`).join("")}</select>
+       <button type="button" role="tab" class="nouvelle" data-eq-sel="nouvelle" aria-selected="${co.eqSel === "nouvelle"}">+ Nouvelle équipe</button></div>`;
   if (!ok.length) h += `<div class="bloc vide">Aucun joueur suivi pour l'instant : ajoute des joueurs dans l'onglet « Joueurs » (accès accepté), puis range-les ici.</div>`;
-  for (const e of E.data || []) {
+  if (co.eqSel === "nouvelle") return h + `<form class="bloc" id="co-eq-form"><h3>Nouvelle équipe</h3><div class="c-form"><input id="co-eq-nom" maxlength="60" required placeholder="ex. Équipe 2, U14 Garçons, Interclubs" aria-label="Nom de l'équipe">
+    <button type="submit" class="btn plein">Créer l'équipe</button></div>
+    ${EQUIPES_TYPES.some((x) => !eqs.some((e) => e.nom === x)) ? `<p class="meta">Équipes types manquantes : ${EQUIPES_TYPES.filter((x) => !eqs.some((e) => e.nom === x)).map(esc).join(", ")}.
+      <button type="button" class="lien" id="co-eq-types">Les ajouter</button></p>` : ""}
+    <p class="meta">Astuce : le nom guide les joueurs proposés (Messieurs / Dames, U12 / U14 / U16, Mid-Am, Seniors).</p></form>`;
+  for (const e of eqs.filter((x) => x.id === co.eqSel)) {
     const membres = (e.equipe_joueurs || []).map((m) => m.joueur_id), dispo = ok.filter((j) => !membres.includes(j.joueur_id));
     h += `<div class="bloc co-equipe"><div class="co-eq-tete"><h3>${esc(e.nom)} <small>${membres.length} joueur${membres.length > 1 ? "s" : ""}</small></h3>
       <button type="button" class="lien" data-eq-cal="${esc(e.id)}">Calendrier</button><button type="button" class="lien" data-eq-nom="${esc(e.id)}" data-nom="${esc(e.nom)}">Renommer</button><button type="button" class="lien" data-eq-suppr="${esc(e.id)}">Supprimer</button></div>
@@ -3235,6 +3252,7 @@ async function htmlCalendrierEquipe() {
 $("co-contenu").addEventListener("click", async (e) => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.coOnglet) { co.onglet = b.dataset.coOnglet; rendreCoach(); return; }
+  if (b.dataset.eqSel) { co.eqSel = b.dataset.eqSel; rendreCoach(); return; }
   if (b.dataset.coOuvrir) { const t = tournoiDe(b.dataset.coOuvrir); if (t) ouvrir(t); return; }
   if (b.dataset.eqCal) { co.equipe = b.dataset.eqCal; co.onglet = "calendrier"; rendreCoach(); return; }
   if (b.id === "co-eq-types") {
@@ -3260,13 +3278,14 @@ $("co-contenu").addEventListener("input", (e) => {
 });
 $("co-contenu").addEventListener("change", (e) => {
   if (e.target.id === "co-cal-eq") { co.equipe = e.target.value; rendreCoach(); }
+  if (e.target.id === "co-eq-liste") { co.eqSel = e.target.value; rendreCoach(); }
   if (e.target.id === "co-cal-an") { co.annee = +e.target.value; rendreCoach(); }
 });
 $("co-contenu").addEventListener("submit", async (e) => {
   if (e.target.id !== "co-eq-form") return;
   e.preventDefault();
-  const { error } = await sb.from("equipes").insert({ nom: $("co-eq-nom").value.trim() });
-  if (error) signaler("Création impossible : " + error.message); else signaler("Équipe créée : ajoute-lui des joueurs.");
+  const { data, error } = await sb.from("equipes").insert({ nom: $("co-eq-nom").value.trim() }).select("id").maybeSingle();
+  if (error) signaler("Création impossible : " + error.message); else { co.eqSel = data?.id || ""; signaler("Équipe créée : ajoute-lui des joueurs."); }
   rendreCoach();
 });
 
