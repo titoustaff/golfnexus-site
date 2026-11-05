@@ -2409,7 +2409,11 @@ function blocObtenu(t) {
   }
   const place = r ? r.place : m.place, tours = r ? r.tours : m.tours, num = placeNum(place);
   const ecart = num && est?.place ? num - est.place : null;
-  return `<div class="meta obtenu"><b>Place obtenue : ${esc(String(place).replace(/^(\d+)/, "$1ᵉ").replace(/ème|er/, ""))}${r?.classes ? ` / ${r.classes} classés` : ""}</b>`
+  // cut ou abandon (« 60 · cut ») : le rang porte sur tout le champ, pas sur les classés
+  const horsClass = /cut|abandon|non class/i.test(String(place)), rangChamp = horsClass ? String(place).match(/^(\d+)/)?.[1] : null;
+  const libPlace = horsClass ? `${/abandon/i.test(place) ? "Abandon" : /cut/i.test(place) ? "Cut" : "Non classé"}${rangChamp ? ` (${rangChamp}ᵉ sur ${r?.inscrits || "l'ensemble du"} champ)` : ""}`
+    : `${esc(String(place).replace(/^(\d+)/, "$1ᵉ").replace(/ème|er/, ""))}${r?.classes ? ` / ${r.classes} classés` : ""}`;
+  return `<div class="meta obtenu"><b>Place obtenue : ${libPlace}</b>`
     + (tours?.length ? ` · ${tours.join("-")}${r?.par != null ? ` (${r.par > 0 ? "+" : ""}${r.par})` : m?.moy_sss != null ? ` (${sg(m.moy_sss, 1)} vs SSS)` : ""}` : "")
     + (estTxt ? ` · ${estTxt}${ecart ? ` <span class="${ecart < 0 ? "mieux" : "moins"}">(${ecart < 0 ? ecart : "+" + ecart})</span>` : ""}` : "")
     + (m ? ` <span class="meta" title="Résultats détaillés absents chez ffgolf : place lue dans ta fiche Mérite">· d'après le Mérite</span>` : "") + "</div>";
