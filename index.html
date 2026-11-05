@@ -778,6 +778,9 @@ body.assistant-ouvert { overflow: hidden; }
 .bandeau-in .vue-bandeau { flex-wrap: wrap; overflow: visible; justify-content: center; justify-self: stretch; max-width: none; border-radius: 16px; row-gap: 4px; }
 .bandeau-in .vue-bandeau span { white-space: nowrap; }
 @media (max-width: 1500px) { .bandeau-in .vue-bandeau small { display: none; } }
+#p-rappels-bloc[hidden] { display: none; } #p-rappels-bloc .bascule { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
+.p-rappels-jours { display: flex; flex-wrap: wrap; gap: 8px 18px; } .p-rappels-jours label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.p-rappels-jours.eteint { opacity: .45; }
 
 </style>
 </head>
@@ -1028,6 +1031,16 @@ body.assistant-ouvert { overflow: hidden; }
       </div>
       <p class="meta">Ta fiche est enregistrée dans ton compte (ou dans ce navigateur sans compte). Elle sert à estimer ta <b>place probable</b> sur chaque tournoi.</p>
     </form>
+    <div class="bloc p-bloc" id="p-rappels-bloc">
+      <h3>Rappels d'inscription</h3>
+      <label class="bascule"><input id="p-rappels" type="checkbox"><span class="piste" aria-hidden="true"></span>M'envoyer un e-mail avant la clôture des inscriptions</label>
+      <p class="meta">Pour les tournois de « Ma saison » encore « Envisagé » (pas encore inscrit). Un seul e-mail par tournoi et par délai, plus aucun dès que tu le passes en « Inscrit ».</p>
+      <div class="p-rappels-jours" id="p-rappels-jours">
+        <label><input type="checkbox" data-rappel="7"> 7 jours avant</label>
+        <label><input type="checkbox" data-rappel="3"> 3 jours avant</label>
+        <label><input type="checkbox" data-rappel="1"> la veille</label>
+      </div>
+    </div>
   </section>
 
   <div id="fiche" class="fiche" hidden>
@@ -2595,8 +2608,22 @@ async function relireMerite() {
 }
 
 const rech2 = { resultats: null, en_cours: false, erreur: "" };
+function rendreRappels() {
+  const r = (Saison.fiche || {}).rappels || {}, actif = !!r.actif, jours = r.jours || [7, 1];
+  $("p-rappels-bloc").hidden = Saison.mode !== "compte" || !!Saison.demo;
+  $("p-rappels").checked = actif;
+  $("p-rappels-jours").classList.toggle("eteint", !actif);
+  for (const c of document.querySelectorAll("[data-rappel]")) { c.checked = jours.includes(+c.dataset.rappel); c.disabled = !actif; }
+}
+$("p-rappels-bloc").addEventListener("change", () => {
+  const jours = [...document.querySelectorAll("[data-rappel]:checked")].map((c) => +c.dataset.rappel);
+  const actif = $("p-rappels").checked;
+  Saison.setFiche({ rappels: { actif, jours: jours.length ? jours : [7, 1] } });
+  rendreRappels();
+  signaler(actif ? `Rappels activés : ${(jours.length ? jours : [7, 1]).map((j) => (j === 1 ? "la veille" : j + " jours avant")).join(", ")} la clôture.` : "Rappels désactivés.");
+});
 function rendreProfil() {
-  rendreAcces();
+  rendreAcces(); rendreRappels();
   const f = Saison.fiche, m = f.merite;
   { // coach qui ne joue pas : seulement nom, club, domicile
     const seul = coachSeul();
