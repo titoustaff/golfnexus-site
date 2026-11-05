@@ -706,6 +706,26 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
 .co-ajout-bloc textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--bord); border-radius: 8px; background: var(--fond); padding: 8px; font: inherit; font-size: 13px; margin-bottom: 8px; }
 #co-ajout-pan[hidden] { display: none; }
 @media (max-width: 560px) { .co-table th:nth-child(4), .co-table td:nth-child(4), .co-table th:nth-child(6), .co-table td:nth-child(6) { display: none; } }
+/* bandeau « vue d'un joueur » (coach) : visible partout, téléphone compris */
+.vue-bandeau { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; position: sticky; top: 0; z-index: 900; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+.vue-bandeau[hidden] { display: none; }
+.vue-bandeau button { border: 1px solid rgba(46,36,0,.35); background: rgba(255,255,255,.55); color: #2e2400; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.vue-bandeau button[aria-pressed=true] { background: #2e2400; color: #fff; }
+.co-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; } .co-actions .btn { height: 30px; padding: 0 10px; font-size: 13px; }
+.co-table td.co-actions { white-space: nowrap; }
+@media (max-width: 560px) { .co-table th:nth-child(3), .co-table td:nth-child(3) { display: none; } }
+@media (max-width: 560px) { .b-compte .b-demo { display: none; } }
+/* téléphone : le tableau des joueurs devient une pile de fiches (rien de coupé à droite) */
+@media (max-width: 560px) {
+  .co-table { overflow: visible; } .co-table table, .co-table tbody { display: block; } .co-table thead { display: none; }
+  .co-table tr { display: grid; grid-template-columns: 26px 1fr; gap: 4px 8px; padding: 10px 0; border-bottom: 1px solid var(--bord); }
+  .co-table td { display: block; border: 0 !important; padding: 0 !important; white-space: normal !important; }
+  .co-table td:nth-child(1) { grid-row: 1 / span 4; padding-top: 2px !important; }
+  .co-table td:nth-child(3) { display: block !important; font-size: 12px; color: var(--doux); }
+  .co-table td:nth-child(4), .co-table td:nth-child(6) { display: none !important; }
+  .co-table td.co-actions { display: flex !important; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .co-ligne .co-actions { width: 100%; }
+}
 
 </style>
 </head>
@@ -774,6 +794,7 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
       <div class="b-compte" id="b-compte" aria-live="polite"></div>
     </div>
   </header>
+  <div class="vue-bandeau" id="vue-bandeau" hidden></div>
   <div class="b-pan-ancre"><div class="b-pan" id="b-pan" hidden></div></div>
 
   <div id="ecran-tournois">
@@ -2070,6 +2091,12 @@ function rendreCompte() {
   document.body.classList.toggle("lecture-seule", !!Saison.demo);   // vue coach : boutons de modification masqués
   if (!connecte && ["profil", "stats", "admin", "coach"].includes(etat.ecran)) ecran("tournois");
   pan.hidden = !compte.ouvert;
+  const vb = $("vue-bandeau");
+  vb.hidden = !(connecte && Saison.demo?.coach);
+  if (!vb.hidden) vb.innerHTML = `<span>👁 <b>${esc(Saison.demo.nom || "Joueur")}</b> · lecture seule</span>
+    <button type="button" data-vue-ecran="saison" aria-pressed="${etat.ecran === "saison"}">Saison</button>
+    <button type="button" data-vue-ecran="stats" aria-pressed="${etat.ecran === "stats"}">Stats</button>
+    <button type="button" data-vue-retour>← Mon compte</button>`;
   if (connecte && Saison.demo?.coach) {   // coach : vue d'un joueur, lecture seule
     $("v-profil").hidden = true;
     b.innerHTML = selecteurVue() + `<span class="b-btn b-demo" title="Lecture seule : rien ne peut être modifié">👁 lecture seule</span>`;
@@ -3082,7 +3109,7 @@ function selecteurVue() {
   return `<select class="c-vue" id="c-vue" aria-label="Voir la saison de"><option value="">Vue : moi</option>${J.map((j) =>
     `<option value="${esc(j.joueur_id)}" ${j.joueur_id === cur ? "selected" : ""}>Vue : ${esc(j.nom || j.libelle || "joueur " + (j.licence || ""))}</option>`).join("")}</select>`;
 }
-async function voirJoueur(id) {
+async function voirJoueur(id, cible = null) {
   const j = (Saison.joueurs || []).find((x) => x.joueur_id === id); if (!j) return;
   try {
     const L = await sb.from("saisons").select("id,nom,annee").eq("user_id", id);
@@ -3099,7 +3126,7 @@ async function voirJoueur(id) {
     // user reste le coach (la session ne change pas) ; demo = lecture seule (aucune écriture : Saison.base)
     Object.assign(Saison, { demo: { ...Saison.demo, coach: true, id }, user: moi.user, moi: moi.user, role: moi.role, joueurs: moi.joueurs });
     distanceDuProfil(true); rendre(); toutRafraichir();
-    if (etat.ecran !== "saison" && etat.ecran !== "stats") ecran("saison"); else ecran(etat.ecran);
+    ecran(cible || (etat.ecran === "stats" ? "stats" : "saison"));
     signaler(`Tu regardes la saison de ${j.nom || "ce joueur"} (lecture seule).`);
   } catch (e) { signaler("Lecture impossible : " + (e.message || e)); }
 }
@@ -3108,6 +3135,11 @@ async function revenirMoi() {
   try { await Saison.connecter(u); } catch (e) { signaler("Lecture du compte impossible : " + (e.message || e)); }
   distanceDuProfil(true); rendre(); toutRafraichir(); ecran(etat.ecran === "admin" ? "admin" : etat.ecran);
 }
+$("vue-bandeau").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.vueEcran) ecran(b.dataset.vueEcran);
+  else if ("vueRetour" in b.dataset) revenirMoi();
+});
 document.addEventListener("change", (e) => { if (e.target.id === "c-vue") { e.target.value ? voirJoueur(e.target.value) : revenirMoi(); } });
 
 // ---- Mon profil : validation parentale, coachs (côté joueur), joueurs (côté coach)
@@ -3147,7 +3179,7 @@ async function clicAcces(e) {
   else if (b.dataset.accesNon) r = await sb.from("acces_coach").update({ statut: "refuse" }).eq("coach_id", b.dataset.accesNon).eq("joueur_id", moi);
   else if (b.dataset.accesFin) { if (!confirm("Retirer l'accès de ce coach ?")) return; r = await sb.from("acces_coach").delete().eq("coach_id", b.dataset.accesFin).eq("joueur_id", moi); }
   else if (b.dataset.accesCoachFin) { if (!confirm("Ne plus suivre ce joueur ?")) return; r = await sb.from("acces_coach").delete().eq("coach_id", moi).eq("joueur_id", b.dataset.accesCoachFin); }
-  else if (b.dataset.voir) { await voirJoueur(b.dataset.voir); return; }
+  else if (b.dataset.voir) { await voirJoueur(b.dataset.voir, b.dataset.cible || "saison"); return; }
   else return;
   if (r?.error) signaler(/validation_parent/.test(r.error.message) ? "Valide d'abord le compte en tant que parent (encadré jaune)." : "Impossible : " + r.error.message);
   if (Saison.role !== "joueur") { const J = await sb.rpc("mes_joueurs"); Saison.joueurs = (J.data || []).filter((j) => j.statut === "accepte"); rendreCompte(); }
@@ -3285,7 +3317,8 @@ function majTableJoueurs() {
       <td>${ok && j.index_golf != null ? String(j.index_golf).replace(".", ",") : "—"}</td>
       <td>${(eqDe[j.joueur_id] || []).map((e) => `<span class="co-mini">${esc(e.nom)}</span>`).join(" ") || (ok ? `<span class="meta">—</span>` : "")}</td>
       <td><span class="statut-acces ${j.statut}">${lib[j.statut]}</span></td>
-      <td><button type="button" class="lien" data-acces-coach-fin="${esc(j.joueur_id)}">${ok ? "Ne plus suivre" : "Annuler"}</button></td></tr>`; }).join("")
+      <td class="co-actions">${ok ? `<button type="button" class="btn" data-voir="${esc(j.joueur_id)}">Saison</button><button type="button" class="btn" data-voir="${esc(j.joueur_id)}" data-cible="stats">Stats</button>` : ""}
+        <button type="button" class="lien" data-acces-coach-fin="${esc(j.joueur_id)}">${ok ? "Ne plus suivre" : "Annuler"}</button></td></tr>`; }).join("")
     || `<tr><td colspan="7" class="meta">${(co.data.joueurs || []).length ? "Aucun joueur pour ces critères." : "Aucun joueur : clique sur « + Ajouter des joueurs »."}</td></tr>`;
   $("co-pied").innerHTML = `<p class="meta">${L.length} joueur${L.length > 1 ? "s" : ""}${L.length > co.voir ? ` · ${co.voir} affichés <button type="button" class="lien" data-co-plus>Afficher ${Math.min(100, L.length - co.voir)} de plus</button>` : ""}</p>`;
   const tout = $("co-tout"), sel = vus.filter((j) => j.statut === "accepte");
@@ -3356,7 +3389,8 @@ async function htmlEquipes() {
         <div><h4>Dans l'équipe <small>${membres.length}</small></h4>
           ${membres.length > 10 ? `<input type="search" class="co-cherche" data-filtre="co-membres-${esc(e.id)}" placeholder="Filtrer l'équipe…" aria-label="Filtrer l'équipe" autocomplete="off">` : ""}
           <div class="co-defile" id="co-membres-${esc(e.id)}">${membres.map((id) => nomDe(id)).sort((a, b) => (a?.nom || "").localeCompare(b?.nom || "", "fr")).map((j) => j && j.joueur_id).filter(Boolean).concat(membres.filter((id) => !nomDe(id))).map((id) => { const j = nomDe(id); return `<div class="co-ligne" data-q="${esc(plier([j?.nom, j?.libelle, j?.licence, j?.categorie].filter(Boolean).join(" ")))}"><div><b>${esc(j?.nom || j?.libelle || "joueur")}</b>${j && infoJoueur(j) ? `<small>${esc(infoJoueur(j))}</small>` : ""}</div>
-            <button type="button" class="btn" data-eq-retirer="${esc(e.id)}|${esc(id)}">Retirer</button></div>`; }).join("") || `<p class="meta">Personne pour l'instant : cherche un joueur à droite et clique sur « Ajouter ».</p>`}</div></div>
+            <span class="co-actions"><button type="button" class="btn" data-voir="${esc(id)}">Saison</button><button type="button" class="btn" data-voir="${esc(id)}" data-cible="stats">Stats</button>
+            <button type="button" class="lien" data-eq-retirer="${esc(e.id)}|${esc(id)}">Retirer</button></span></div>`; }).join("") || `<p class="meta">Personne pour l'instant : cherche un joueur à droite et clique sur « Ajouter ».</p>`}</div></div>
         <div>${(() => { const ok2 = dispo.filter((j) => correspondEquipe(e.nom, j));
           co.candidats[e.id] = ok2.map((j) => ({ id: j.joueur_id, nom: j.nom || j.libelle || j.licence, info: infoJoueur(j),
             q: plier([j.nom, j.libelle, j.licence, j.categorie].filter(Boolean).join(" ")) })).sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
