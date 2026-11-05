@@ -712,7 +712,7 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
 .vue-bandeau button { border: 1px solid rgba(46,36,0,.35); background: rgba(255,255,255,.55); color: #2e2400; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 13px; cursor: pointer; }
 .vue-bandeau button[aria-pressed=true] { background: #2e2400; color: #fff; }
 .co-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; } .co-actions .btn { height: 30px; padding: 0 10px; font-size: 13px; }
-.co-table td.co-actions { white-space: nowrap; }
+.co-table td.co-td-actions { white-space: nowrap; text-align: right; }
 @media (max-width: 560px) { .co-table th:nth-child(3), .co-table td:nth-child(3) { display: none; } }
 @media (max-width: 560px) { .b-compte .b-demo { display: none; } }
 /* téléphone : le tableau des joueurs devient une pile de fiches (rien de coupé à droite) */
@@ -723,7 +723,7 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
   .co-table td:nth-child(1) { grid-row: 1 / span 4; padding-top: 2px !important; }
   .co-table td:nth-child(3) { display: block !important; font-size: 12px; color: var(--doux); }
   .co-table td:nth-child(4), .co-table td:nth-child(6) { display: none !important; }
-  .co-table td.co-actions { display: flex !important; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .co-table td.co-td-actions { grid-column: 2; margin-top: 4px; text-align: left; }
   .co-ligne .co-actions { width: 100%; }
 }
 .st-tour { stroke: var(--carte); stroke-width: 1.5; fill-opacity: .55; } .st-tour.c2 { fill: var(--st2); } .st-tour.c1 { fill: var(--st1); }
@@ -773,6 +773,11 @@ body.assistant-ouvert { overflow: hidden; }
 .as-pied { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; } .as-pied .btn { height: 42px; padding: 0 20px; font-size: 15px; }
 #as-res { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; margin-bottom: 6px; }
 #as-res .p-res { text-align: left; }
+
+/* ligne jaune « vue joueur » : jamais coupée — elle passe à la ligne s'il manque de place */
+.bandeau-in .vue-bandeau { flex-wrap: wrap; overflow: visible; justify-content: center; justify-self: stretch; max-width: none; border-radius: 16px; row-gap: 4px; }
+.bandeau-in .vue-bandeau span { white-space: nowrap; }
+@media (max-width: 1500px) { .bandeau-in .vue-bandeau small { display: none; } }
 
 </style>
 </head>
@@ -2152,7 +2157,7 @@ function rendreCompte() {
     <button type="button" data-vue-retour>← Mon compte</button>`;
   if (connecte && Saison.demo?.coach) {   // coach : vue d'un joueur, lecture seule
     $("v-profil").hidden = true;
-    b.innerHTML = selecteurVue() + `<span class="b-btn b-demo" title="Lecture seule : rien ne peut être modifié">👁 lecture seule</span>`;
+    b.innerHTML = selecteurVue();   // « lecture seule » est dans la ligne jaune
     pan.hidden = true; c.hidden = true; c.innerHTML = "";
     return;
   }
@@ -3400,8 +3405,8 @@ function majTableJoueurs() {
       <td>${ok && j.index_golf != null ? String(j.index_golf).replace(".", ",") : "—"}</td>
       <td>${(eqDe[j.joueur_id] || []).map((e) => `<span class="co-mini">${esc(e.nom)}</span>`).join(" ") || (ok ? `<span class="meta">—</span>` : "")}</td>
       <td><span class="statut-acces ${j.statut}">${lib[j.statut]}</span></td>
-      <td class="co-actions">${ok ? `<button type="button" class="btn" data-voir="${esc(j.joueur_id)}">Saison</button><button type="button" class="btn" data-voir="${esc(j.joueur_id)}" data-cible="stats">Stats</button>` : ""}
-        <button type="button" class="lien" data-acces-coach-fin="${esc(j.joueur_id)}">${ok ? "Ne plus suivre" : "Annuler"}</button></td></tr>`; }).join("")
+      <td class="co-td-actions"><span class="co-actions">${ok ? `<button type="button" class="btn" data-voir="${esc(j.joueur_id)}">Saison</button><button type="button" class="btn" data-voir="${esc(j.joueur_id)}" data-cible="stats">Stats</button>` : ""}
+        <button type="button" class="lien" data-acces-coach-fin="${esc(j.joueur_id)}">${ok ? "Ne plus suivre" : "Annuler"}</button></span></td></tr>`; }).join("")
     || `<tr><td colspan="7" class="meta">${(co.data.joueurs || []).length ? "Aucun joueur pour ces critères." : "Aucun joueur : clique sur « + Ajouter des joueurs »."}</td></tr>`;
   $("co-pied").innerHTML = `<p class="meta">${L.length} joueur${L.length > 1 ? "s" : ""}${L.length > co.voir ? ` · ${co.voir} affichés <button type="button" class="lien" data-co-plus>Afficher ${Math.min(100, L.length - co.voir)} de plus</button>` : ""}</p>`;
   const tout = $("co-tout"), sel = vus.filter((j) => j.statut === "accepte");
