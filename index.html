@@ -3031,8 +3031,16 @@ function lecturePars(parType) {
 async function simulation(der) {
   const box = $("st-simu"); if (!box || !der?.place || der.total == null || !der.divisor) { if (box) box.innerHTML = ""; return; }
   try {
-    const L = await meriteListe(Saison.fiche.sexe || "H", st.liste);
-    const rows = (L.data || Object.values(L).find(Array.isArray) || []).map((r) => +r.TOTAL).filter((x) => !isNaN(x)).sort((a, b) => b - a);
+    // ménager ffgolf : les totaux du Mérite du mois (quelques Mo à télécharger) sont gardés dans ce navigateur pour le mois
+    const cle = `gn-totaux-${st.liste}-${Saison.fiche.sexe || "H"}-${moisCourant()}`;
+    let rows = null;
+    try { rows = JSON.parse(localStorage.getItem(cle) || "null"); } catch { /* */ }
+    if (!rows) {
+      const L = await meriteListe(Saison.fiche.sexe || "H", st.liste);
+      rows = (L.data || Object.values(L).find(Array.isArray) || []).map((r) => +r.TOTAL).filter((x) => !isNaN(x)).sort((a, b) => b - a);
+      try { for (const k of Object.keys(localStorage)) if (k.startsWith("gn-totaux-") && !k.endsWith(moisCourant())) localStorage.removeItem(k);
+        localStorage.setItem(cle, JSON.stringify(rows)); } catch { /* stockage plein ou bloqué : tant pis */ }
+    }
     const somme = der.total * der.divisor, div2 = Math.max(der.divisor, (der.nb || 0) + 1);
     const cibles = [...new Set([der.place - 10, der.place - 25, der.place - 50, 100, 50, 20, 10, 1].filter((p) => p >= 1 && p < der.place))].sort((a, b) => b - a).slice(0, 5);
     const lignes = cibles.map((p) => { const tot = rows[p - 1]; if (tot == null) return null; const pts = Math.max(0, tot * div2 - somme + 0.01); return { p, pts }; }).filter(Boolean);
