@@ -605,6 +605,7 @@ body:not(.verrou) #accueil { display: none; }
 .c-vue option { color: var(--texte); background: var(--carte); }
 .vue-bandeau { background: var(--jaune); color: #2e2400; text-align: center; padding: 6px 10px; font-size: 13px; font-weight: 600; }
 .vue-bandeau button { margin-left: 8px; }
+.p-inv-mineur { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; } #p-inviter { flex-wrap: wrap; margin-top: 8px; }
 
 </style>
 </head>
@@ -3013,7 +3014,12 @@ async function rendreAcces() {
     h += `<div class="bloc p-bloc"><h3>Mes joueurs (coach)</h3>
       <form class="c-form" id="p-demande"><input id="p-demande-lic" inputmode="numeric" placeholder="licence ffgolf du joueur" aria-label="Licence du joueur" required>
         <button type="submit" class="btn plein">Demander l'accès</button></form>
-      <p class="meta">Le joueur (ou son parent) reçoit ta demande dans son profil et l'accepte ou non. Sans compte GolfNexus, rien ne se passe : invite-le d'abord.</p>
+      <p class="meta">Le joueur (ou son parent) reçoit ta demande dans son profil et l'accepte ou non. Sans compte GolfNexus, rien ne se passe : invite-le ci-dessous.</p>
+      <form class="c-form" id="p-inviter"><input id="p-inv-email" type="email" placeholder="e-mail du joueur (du parent si moins de 18 ans)" aria-label="E-mail du joueur" required>
+        <input id="p-inv-nom" type="text" maxlength="60" placeholder="nom du joueur" aria-label="Nom du joueur">
+        <label class="p-inv-mineur"><input id="p-inv-mineur" type="checkbox"> moins de 18 ans</label>
+        <button type="submit" class="btn">Inviter</button></form>
+      <p class="meta">Il reçoit un e-mail GolfNexus ; à son inscription, ta demande de suivi l'attend : il (ou son parent) n'a qu'à l'accepter.</p>
       ${joueurs.map((j) => `<div class="acces-ligne"><div class="qui"><b>${esc(j.nom || "Joueur")}</b><small>licence ${esc(j.licence || "—")} · demandé le ${fmtDate(String(j.demande_le).slice(0, 10))}</small></div>
         <span class="statut-acces ${j.statut}">${lib[j.statut]}</span>
         ${j.statut === "accepte" ? `<button type="button" class="btn plein" data-voir="${esc(j.joueur_id)}">Voir sa saison</button>` : ""}
@@ -3040,6 +3046,14 @@ $("p-acces").addEventListener("click", async (e) => {
   rendreAcces();
 });
 $("p-acces").addEventListener("submit", async (e) => {
+  if (e.target.id === "p-inviter") {
+    e.preventDefault();
+    const err = await inviter($("p-inv-email").value.trim().toLowerCase(), $("p-inv-mineur").checked ? "mineur" : "joueur", $("p-inv-nom").value.trim());
+    signaler(err ? (/déjà un compte/.test(err) ? "Cette adresse a déjà un compte : demande l'accès avec sa licence." : "Invitation impossible : " + err)
+      : "Invitation envoyée. Ta demande de suivi l'attendra à son inscription.");
+    if (!err) e.target.reset();
+    return;
+  }
   if (e.target.id !== "p-demande") return;
   e.preventDefault();
   const lic = $("p-demande-lic").value.replace(/\s/g, "");
