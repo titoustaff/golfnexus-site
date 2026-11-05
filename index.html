@@ -637,6 +637,10 @@ body.lecture-seule .note { pointer-events: none; background: transparent; border
 .co-cal .date { display: flex; flex-direction: column; align-items: center; background: var(--sauge-pale); border-radius: 10px; padding: 4px 0; height: fit-content; }
 .co-cal .date b { font-size: 18px; color: var(--vert); } .co-cal .date span { font-size: 11px; color: var(--doux); text-transform: uppercase; }
 .co-onglets button[aria-pressed=true], #st-listes button[aria-pressed=true] { background: var(--vert); color: #fff; }
+.co-ajout { margin-top: 10px; } .co-cherche { width: 100%; max-width: 420px; height: 36px; border: 1px solid var(--bord); border-radius: 8px; background: var(--fond); padding: 0 10px; }
+.co-props { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 160px; overflow-y: auto; }
+.co-prop { border: 1px dashed var(--vert-2); background: none; color: var(--vert); border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.co-prop:hover { background: var(--sauge-pale); } .co-prop small { font-weight: 500; color: var(--doux); } .co-prop[hidden] { display: none; }
 
 </style>
 </head>
@@ -3164,11 +3168,6 @@ function correspondEquipe(nom, j) {
   if (/senior/.test(n) && age != null && age < 50) return false;
   return true;
 }
-function optionsEquipe(nom, dispo) {
-  const o = (j) => `<option value="${esc(j.joueur_id)}">${esc(j.nom || j.libelle || j.licence)}</option>`;
-  const oui = dispo.filter((j) => correspondEquipe(nom, j)), non = dispo.filter((j) => !correspondEquipe(nom, j));
-  return oui.map(o).join("") + (non.length ? `<optgroup label="Ne correspond pas à l'équipe (sexe, âge)">${non.map(o).join("")}</optgroup>` : "");
-}
 async function htmlEquipes() {
   let [E, J] = await Promise.all([sb.from("equipes").select("id,nom,equipe_joueurs(joueur_id)").order("nom"), sb.rpc("mes_joueurs")]);
   if (E.error) throw E.error;
@@ -3189,8 +3188,11 @@ async function htmlEquipes() {
       <button type="button" class="lien" data-eq-cal="${esc(e.id)}">Calendrier</button><button type="button" class="lien" data-eq-nom="${esc(e.id)}" data-nom="${esc(e.nom)}">Renommer</button><button type="button" class="lien" data-eq-suppr="${esc(e.id)}">Supprimer</button></div>
       <div class="co-puces">${membres.map((id) => { const j = nomDe(id); return `<span class="co-puce">${esc(j?.nom || j?.libelle || "joueur")}${j && infoJoueur(j) ? ` <small>${esc(infoJoueur(j))}</small>` : ""}
         <button type="button" aria-label="Retirer de l'équipe" data-eq-retirer="${esc(e.id)}|${esc(id)}">×</button></span>`; }).join("") || `<span class="meta">Aucun joueur dans cette équipe.</span>`}</div>
-      ${dispo.length ? `<div class="c-form co-ajout"><select data-eq-choix="${esc(e.id)}" aria-label="Joueur à ajouter">${optionsEquipe(e.nom, dispo)}</select>
-        <button type="button" class="btn" data-eq-ajouter="${esc(e.id)}">Ajouter</button></div>` : ""}</div>`;
+      ${(() => { const ok2 = dispo.filter((j) => correspondEquipe(e.nom, j)); return ok2.length
+        ? `<div class="co-ajout"><input type="search" class="co-cherche" data-eq-cherche="${esc(e.id)}" placeholder="Ajouter un joueur : nom, licence, catégorie…" aria-label="Rechercher un joueur à ajouter" autocomplete="off">
+           <div class="co-props" data-eq-props="${esc(e.id)}">${ok2.map((j) => `<button type="button" class="co-prop" data-eq-ajouter="${esc(e.id)}" data-j="${esc(j.joueur_id)}"
+             data-q="${esc(plier([j.nom, j.libelle, j.licence, j.categorie].filter(Boolean).join(" ")))}">+ ${esc(j.nom || j.libelle || j.licence)}${infoJoueur(j) ? ` <small>${esc(infoJoueur(j))}</small>` : ""}</button>`).join("")}</div></div>`
+        : `<p class="meta">Aucun autre de tes joueurs ne correspond à cette équipe (sexe, âge).</p>`; })()}</div>`;
   }
   return h;
 }
@@ -3245,11 +3247,16 @@ $("co-contenu").addEventListener("click", async (e) => {
     r = await sb.from("equipes").update({ nom: n.trim().slice(0, 60) }).eq("id", b.dataset.eqNom); }
   else if (b.dataset.eqSuppr) { if (!confirm("Supprimer cette équipe ? (les joueurs restent suivis)")) return; r = await sb.from("equipes").delete().eq("id", b.dataset.eqSuppr); }
   else if (b.dataset.eqRetirer) { const [eq, j] = b.dataset.eqRetirer.split("|"); r = await sb.from("equipe_joueurs").delete().eq("equipe_id", eq).eq("joueur_id", j); }
-  else if (b.dataset.eqAjouter) { const j = document.querySelector(`[data-eq-choix="${CSS.escape(b.dataset.eqAjouter)}"]`)?.value; if (!j) return;
-    r = await sb.from("equipe_joueurs").insert({ equipe_id: b.dataset.eqAjouter, joueur_id: j }); }
+  else if (b.dataset.eqAjouter) r = await sb.from("equipe_joueurs").insert({ equipe_id: b.dataset.eqAjouter, joueur_id: b.dataset.j });
   else return;
   if (r?.error) signaler("Impossible : " + r.error.message);
   rendreCoach();
+});
+// recherche dans les joueurs à ajouter (seulement ceux qui correspondent à l'équipe)
+$("co-contenu").addEventListener("input", (e) => {
+  const id = e.target.dataset.eqCherche; if (!id) return;
+  const q = plier(e.target.value).trim();
+  for (const b of document.querySelectorAll(`[data-eq-props="${CSS.escape(id)}"] .co-prop`)) b.hidden = !!q && !q.split(/\s+/).every((w) => b.dataset.q.includes(w));
 });
 $("co-contenu").addEventListener("change", (e) => {
   if (e.target.id === "co-cal-eq") { co.equipe = e.target.value; rendreCoach(); }
