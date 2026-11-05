@@ -728,6 +728,20 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
 }
 .st-tour { stroke: var(--carte); stroke-width: 1.5; fill-opacity: .55; } .st-tour.c2 { fill: var(--st2); } .st-tour.c1 { fill: var(--st1); }
 .st-legende i.pt { width: 9px; height: 9px; border-radius: 50%; } .st-legende i.pt.c2 { background: var(--st2); }
+/* ligne « vue joueur » dans l'en-tête (à la place de l'avancée de la saison) */
+.bandeau-in .vue-bandeau { grid-area: saison; position: static; box-shadow: none; justify-self: center; display: flex; flex-wrap: nowrap; gap: 6px; align-items: center;
+  background: var(--jaune); color: #2e2400; border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 13px; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.bandeau-in .vue-bandeau[hidden], .bandeau .saison[hidden] { display: none; }
+.bandeau-in .vue-bandeau span { white-space: nowrap; } .bandeau-in .vue-bandeau small { opacity: .75; }
+.bandeau-in .vue-bandeau button { padding: 3px 10px; font-size: 12.5px; white-space: nowrap; flex: none; }
+@media (max-width: 1100px) { .bandeau-in .vue-bandeau { justify-self: start; } }
+@media (max-width: 560px) { .bandeau-in .vue-bandeau small { display: none; } .bandeau-in .vue-bandeau { justify-self: stretch; } }
+@media (max-width: 560px) {
+  body.lecture-seule .c-vue { display: none; }
+  .bandeau-in .vue-bandeau { padding: 3px 4px 3px 10px; gap: 4px; }
+  .bandeau-in .vue-bandeau span { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+  .bandeau-in .vue-bandeau button { padding: 3px 8px; font-size: 12px; }
+}
 
 </style>
 </head>
@@ -793,10 +807,10 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
         <button type="button" data-ecran="profil" id="v-profil" hidden>Mon profil</button>
       </nav>
       <p class="saison" id="saison"></p>
+      <div class="vue-bandeau" id="vue-bandeau" hidden></div>
       <div class="b-compte" id="b-compte" aria-live="polite"></div>
     </div>
   </header>
-  <div class="vue-bandeau" id="vue-bandeau" hidden></div>
   <div class="b-pan-ancre"><div class="b-pan" id="b-pan" hidden></div></div>
 
   <div id="ecran-tournois">
@@ -2095,7 +2109,8 @@ function rendreCompte() {
   pan.hidden = !compte.ouvert;
   const vb = $("vue-bandeau");
   vb.hidden = !(connecte && Saison.demo?.coach);
-  if (!vb.hidden) vb.innerHTML = `<span>👁 <b>${esc(Saison.demo.nom || "Joueur")}</b> · lecture seule</span>
+  $("saison").hidden = !vb.hidden;   // dans l'en-tête, la ligne « vue joueur » remplace l'avancée de la saison
+  if (!vb.hidden) vb.innerHTML = `<span>👁 <b>${esc(Saison.demo.nom || "Joueur")}</b> <small>lecture seule</small></span>
     <button type="button" data-vue-ecran="saison" aria-pressed="${etat.ecran === "saison"}">Saison</button>
     <button type="button" data-vue-ecran="stats" aria-pressed="${etat.ecran === "stats"}">Stats</button>
     <button type="button" data-vue-retour>← Mon compte</button>`;
