@@ -742,6 +742,9 @@ html, body { overflow-x: clip; }   /* filet de sécurité : jamais de défilemen
   .bandeau-in .vue-bandeau span { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
   .bandeau-in .vue-bandeau button { padding: 3px 8px; font-size: 12px; }
 }
+/* Mes stats sur téléphone : tableaux qui passent à la ligne */
+.st-simu { table-layout: fixed; } .st-simu th { white-space: normal !important; } .st-simu td:first-child { width: 36%; }
+@media (max-width: 560px) { .st-simu td, .st-simu th { padding: 6px 4px; font-size: 12.5px; } .st-simu td:first-child { white-space: normal; } }
 
 </style>
 </head>
@@ -2861,6 +2864,9 @@ const tuileSt = (val, lib, sous = "") => `<div class="st-tuile"><b>${val}</b><sp
 const blocSt = (titre, sous, corps) => corps ? `<div class="bloc st-bloc"><h3>${titre}</h3>${sous ? `<p class="meta">${sous}</p>` : ""}${corps}</div>` : "";
 
 function rendreStats() {
+  // graphiques dessinés à la largeur réelle (sur téléphone, un dessin large réduit rendrait le texte illisible)
+  const larg = Math.max(300, ($("st-contenu").clientWidth || document.documentElement.clientWidth) - 32);
+  st.l1 = Math.min(1040, larg); st.l2 = larg < 760 ? larg : Math.min(520, Math.floor(larg / 2) - 12);
   const S = Saison.stats || { mois: [], tournois: [] }, f = Saison.fiche || {};
   const listes = [...new Set(S.mois.map((m) => m.liste))].sort((a, b) => Object.keys(LISTES_M).indexOf(a) - Object.keys(LISTES_M).indexOf(b));
   if (!listes.includes(st.liste)) st.liste = listes.includes("amateurs") ? "amateurs" : listes[0] || null;
@@ -2902,12 +2908,12 @@ function rendreStats() {
   const pts = (k, fmt) => M.map((m) => ({ x: moisLib(m.mois), y: m[k] == null ? null : +m[k], tip: m[k] == null ? null : fmt(+m[k]) }));
   h += blocSt("Mérite mois par mois", "Relevé chaque mois depuis décembre 2024 : progresse-t-il ou recule-t-il ?", `
     <div class="st-multi">
-      <div><h4>Place au Mérite <small>(plus bas = mieux)</small></h4>${svgLignes({ series: [{ nom: "Place", cls: "c1", pts: pts("place", (v) => fx(v, 0) + "e") }], fmt: (v) => fx(v, 0), W: 520 })}</div>
+      <div><h4>Place au Mérite <small>(plus bas = mieux)</small></h4>${svgLignes({ series: [{ nom: "Place", cls: "c1", pts: pts("place", (v) => fx(v, 0) + "e") }], fmt: (v) => fx(v, 0), W: st.l2 })}</div>
       <div><h4>Moyenne par rapport au SSS <small>(vers le bas = mieux)</small></h4>
         <div class="st-legende"><span><i class="c1"></i>12 mois</span><span><i class="c2"></i>6 mois</span></div>
-        ${svgLignes({ series: [{ nom: "12 mois", court: "12 m", cls: "c1", pts: pts("moy", (v) => sg(v, 2)) }, { nom: "6 mois", court: "6 m", cls: "c2", pts: pts("moy6", (v) => sg(v, 2)) }], fmt: (v) => sg(v, 1), zero: true, W: 520 })}</div>
-      <div><h4>Index</h4>${svgLignes({ series: [{ nom: "Index", cls: "c1", pts: pts("index_golf", (v) => fx(v)) }], fmt: (v) => fx(v), W: 520 })}</div>
-      <div><h4>Points Mérite (total)</h4>${svgLignes({ series: [{ nom: "Total", cls: "c1", pts: pts("total", (v) => fx(v, 2)) }], fmt: (v) => fx(v, 0), W: 520 })}</div>
+        ${svgLignes({ series: [{ nom: "12 mois", court: "12 m", cls: "c1", pts: pts("moy", (v) => sg(v, 2)) }, { nom: "6 mois", court: "6 m", cls: "c2", pts: pts("moy6", (v) => sg(v, 2)) }], fmt: (v) => sg(v, 1), zero: true, W: st.l2 })}</div>
+      <div><h4>Index</h4>${svgLignes({ series: [{ nom: "Index", cls: "c1", pts: pts("index_golf", (v) => fx(v)) }], fmt: (v) => fx(v), W: st.l2 })}</div>
+      <div><h4>Points Mérite (total)</h4>${svgLignes({ series: [{ nom: "Total", cls: "c1", pts: pts("total", (v) => fx(v, 2)) }], fmt: (v) => fx(v, 0), W: st.l2 })}</div>
     </div>`);
 
   // 4 bis. ce qu'il faut pour gagner des places
@@ -2923,12 +2929,12 @@ function rendreStats() {
       ${svgLignes({ series: [
         { nom: "Tour", cls: "c2", points: true, pts: tours.map((x) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +x.d.toFixed(1), tip: `${x.score} (${sg(x.d)}), tour ${x.n} de « ${esc(titre(x.nom))} »` })) },
         { nom: "Moyenne 5 tours", cls: "c1", pts: tours.map((x, i) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +glis[i].toFixed(2), tip: sg(glis[i]) })) }],
-        fmt: (v) => sg(v), zero: true, h: 240,
+        fmt: (v) => sg(v), zero: true, h: 240, W: st.l1,
         // l'axe descend au moins à −5 (et jusqu'à −12 au plus) : les tours sous le SSS doivent se voir
         plancher: Math.max(-12, Math.min(-5, Math.floor(Math.min(...tours.map((x) => x.d))) - 1)) })}
       <div class="st-duo">
         <div><h4>Selon le tour de l'épreuve <small>(12 mois)</small></h4>
-          ${svgColonnes({ barres: parN.map((x) => ({ lib: `Tour ${x.n}`, v: +x.v.toFixed(2), cls: "c1", tip: `<b>Tour ${x.n}</b><br>${sg(x.v, 2)} vs SSS en moyenne<br>${x.c} tours` })), fmt: (v) => sg(v), h: 160, W: 520 })}
+          ${svgColonnes({ barres: parN.map((x) => ({ lib: `Tour ${x.n}`, v: +x.v.toFixed(2), cls: "c1", tip: `<b>Tour ${x.n}</b><br>${sg(x.v, 2)} vs SSS en moyenne<br>${x.c} tours` })), fmt: (v) => sg(v), h: 160, W: st.l2 })}
           <p class="meta">${lectureTours(parN)}</p></div>
         <div><h4>Régularité <small>(12 mois)</small></h4>
           <ul class="st-liste">
@@ -2955,7 +2961,7 @@ function rendreStats() {
     h += blocSt("Trou par trou", `Sur ${fx(nbTours, 0)} tours de Grands Prix relevés (scores de chaque trou publiés par la ffgolf).`, `
       <div class="st-duo">
         <div><h4>Coups au-dessus du par, en moyenne par trou</h4>
-          ${svgColonnes({ barres: parType.map((x) => ({ lib: `Par ${x.p}`, v: +x.v.toFixed(2), cls: "c1", tip: `<b>Par ${x.p}</b><br>${sg(x.v, 2)} par trou<br>${x.c} trous joués` })), fmt: (v) => sg(v, 2), h: 160, W: 520 })}
+          ${svgColonnes({ barres: parType.map((x) => ({ lib: `Par ${x.p}`, v: +x.v.toFixed(2), cls: "c1", tip: `<b>Par ${x.p}</b><br>${sg(x.v, 2)} par trou<br>${x.c} trous joués` })), fmt: (v) => sg(v, 2), h: 160, W: st.l2 })}
           <p class="meta">${lecturePars(parType)}</p></div>
         <div><h4>Répartition des scores</h4>
           <div class="st-seg" role="img" aria-label="${rep.map((x) => `${x.lib} ${Math.round((100 * x.n) / H.length)} %`).join(", ")}">${rep.filter((x) => x.n).map((x) => `<span class="${x.cls}" style="flex:${x.n}" data-tip="${esc(`<b>${x.lib}</b><br>${x.n} trous · ${Math.round((100 * x.n) / H.length)} %<br>${fx(x.n / nbTours)} par tour`)}"></span>`).join("")}</div>
@@ -2993,7 +2999,7 @@ function rendreStats() {
     .filter((x) => x.t && x.t.annee === an && x.e.statut === "joue").reduce((s, x) => { const p = posDe(x.t); return s + (dom && p ? 2 * km(dom, p) : 0); }, 0);
   h += blocSt("Le travail fourni", "Tours de compétition joués par mois (12 derniers mois).", `
     ${svgColonnes({ barres: mois12.map((k) => ({ lib: MOIS_COURT[+k.slice(5) - 1], v: parMois[k]?.tours || 0, cls: "c1", etiq: !!parMois[k]?.tours,
-      tip: `<b>${MOIS[+k.slice(5) - 1]} ${k.slice(0, 4)}</b><br>${parMois[k]?.n || 0} tournoi(s) · ${parMois[k]?.tours || 0} tours` })), fmt: (v) => fx(v, 0), h: 160 })}
+      tip: `<b>${MOIS[+k.slice(5) - 1]} ${k.slice(0, 4)}</b><br>${parMois[k]?.n || 0} tournoi(s) · ${parMois[k]?.tours || 0} tours` })), fmt: (v) => fx(v, 0), h: 160, W: st.l1 })}
     <ul class="st-liste">
       <li><b>${fx(tours12.length || T12.reduce((s, t) => s + (t.tours?.length || 0), 0), 0)} tours</b> de compétition en 12 mois, soit ${fx(T12.reduce((s, t) => s + (t.tours?.length || 0), 0) / 12)} par mois</li>
       ${kmAn ? `<li><b>${fx(Math.round(kmAn / 10) * 10, 0)} km</b> aller-retour pour les tournois joués de ta saison ${an} (à vol d'oiseau)</li>` : ""}
@@ -3200,8 +3206,16 @@ async function clicAcces(e) {
     if (!r.error) { Saison.parentValide = r.data?.parent_valide_le; signaler("Merci, le compte est validé."); }
   } else if (b.dataset.accesOk) r = await sb.from("acces_coach").update({ statut: "accepte" }).eq("coach_id", b.dataset.accesOk).eq("joueur_id", moi);
   else if (b.dataset.accesNon) r = await sb.from("acces_coach").update({ statut: "refuse" }).eq("coach_id", b.dataset.accesNon).eq("joueur_id", moi);
-  else if (b.dataset.accesFin) { if (!confirm("Retirer l'accès de ce coach ?")) return; r = await sb.from("acces_coach").delete().eq("coach_id", b.dataset.accesFin).eq("joueur_id", moi); }
-  else if (b.dataset.accesCoachFin) { if (!confirm("Ne plus suivre ce joueur ?")) return; r = await sb.from("acces_coach").delete().eq("coach_id", moi).eq("joueur_id", b.dataset.accesCoachFin); }
+  else if (b.dataset.accesFin) { if (!confirm("Retirer l'accès de ce coach ?\n\nIl ne verra plus la saison ni les stats du joueur. Pour lui redonner l'accès, il devra refaire une demande.")) return; r = await sb.from("acces_coach").delete().eq("coach_id", b.dataset.accesFin).eq("joueur_id", moi); }
+  else if (b.dataset.accesCoachFin) {
+    const id = b.dataset.accesCoachFin, j = (co.data?.joueurs || Saison.joueurs || []).find((x) => x.joueur_id === id) || {};
+    const nom = j.nom || j.libelle || "ce joueur", eqs = (co.data?.eqDe?.[id] || []).map((e) => e.nom);
+    const msg = j.statut === "demande" ? `Annuler ta demande d'accès à ${nom} ?`
+      : `Ne plus suivre ${nom} ?\n\nTu ne verras plus sa saison ni ses stats${eqs.length ? `, et il sortira de tes équipes (${eqs.join(", ")})` : ""}.\nPour le suivre à nouveau, il faudra refaire une demande et qu'il l'accepte.`;
+    if (!confirm(msg)) return;
+    r = await sb.from("acces_coach").delete().eq("coach_id", moi).eq("joueur_id", id);
+    if (!r.error && j.statut !== "demande") signaler(`Tu ne suis plus ${nom}.`);
+  }
   else if (b.dataset.voir) { await voirJoueur(b.dataset.voir, b.dataset.cible || "saison"); return; }
   else return;
   if (r?.error) signaler(/validation_parent/.test(r.error.message) ? "Valide d'abord le compte en tant que parent (encadré jaune)." : "Impossible : " + r.error.message);
