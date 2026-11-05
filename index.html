@@ -2959,7 +2959,7 @@ function selecteurVue() {
   if (!J.length || Saison.role === "joueur") return "";
   const cur = Saison.demo?.coach ? Saison.demo.id : "";
   return `<select class="c-vue" id="c-vue" aria-label="Voir la saison de"><option value="">Vue : mon compte</option>${J.map((j) =>
-    `<option value="${esc(j.joueur_id)}" ${j.joueur_id === cur ? "selected" : ""}>Vue : ${esc(j.nom || "joueur " + (j.licence || ""))}</option>`).join("")}</select>`;
+    `<option value="${esc(j.joueur_id)}" ${j.joueur_id === cur ? "selected" : ""}>Vue : ${esc(j.nom || j.libelle || "joueur " + (j.licence || ""))}</option>`).join("")}</select>`;
 }
 async function voirJoueur(id) {
   const j = (Saison.joueurs || []).find((x) => x.joueur_id === id); if (!j) return;
@@ -3013,6 +3013,7 @@ async function rendreAcces() {
     const joueurs = J.data;
     h += `<div class="bloc p-bloc"><h3>Mes joueurs (coach)</h3>
       <form class="c-form" id="p-demande"><input id="p-demande-lic" inputmode="numeric" placeholder="licence ffgolf du joueur" aria-label="Licence du joueur" required>
+        <input id="p-demande-nom" type="text" maxlength="60" placeholder="nom du joueur (pour toi)" aria-label="Nom du joueur">
         <button type="submit" class="btn plein">Demander l'accès</button></form>
       <p class="meta">Le joueur (ou son parent) reçoit ta demande dans son profil et l'accepte ou non. Sans compte GolfNexus, rien ne se passe : invite-le ci-dessous.</p>
       <form class="c-form" id="p-inviter"><input id="p-inv-email" type="email" placeholder="e-mail du joueur (du parent si moins de 18 ans)" aria-label="E-mail du joueur" required>
@@ -3020,7 +3021,7 @@ async function rendreAcces() {
         <label class="p-inv-mineur"><input id="p-inv-mineur" type="checkbox"> moins de 18 ans</label>
         <button type="submit" class="btn">Inviter</button></form>
       <p class="meta">Il reçoit un e-mail GolfNexus ; à son inscription, ta demande de suivi l'attend : il (ou son parent) n'a qu'à l'accepter.</p>
-      ${joueurs.map((j) => `<div class="acces-ligne"><div class="qui"><b>${esc(j.nom || "Joueur")}</b><small>licence ${esc(j.licence || "—")} · demandé le ${fmtDate(String(j.demande_le).slice(0, 10))}</small></div>
+      ${joueurs.map((j) => `<div class="acces-ligne"><div class="qui"><b>${esc(j.nom || j.libelle || "Joueur")}</b><small>licence ${esc(j.licence || "—")} · demandé le ${fmtDate(String(j.demande_le).slice(0, 10))}</small></div>
         <span class="statut-acces ${j.statut}">${lib[j.statut]}</span>
         ${j.statut === "accepte" ? `<button type="button" class="btn plein" data-voir="${esc(j.joueur_id)}">Voir sa saison</button>` : ""}
         <button type="button" class="btn" data-acces-coach-fin="${esc(j.joueur_id)}">${j.statut === "accepte" ? "Ne plus suivre" : "Annuler"}</button></div>`).join("")}</div>`;
@@ -3058,7 +3059,7 @@ $("p-acces").addEventListener("submit", async (e) => {
   e.preventDefault();
   const lic = $("p-demande-lic").value.replace(/\s/g, "");
   if (!/^\d{6,12}$/.test(lic)) { signaler("Licence : chiffres uniquement."); return; }
-  const { error } = await sb.rpc("demander_acces", { lic });
+  const { error } = await sb.rpc("demander_acces", { lic, nom: $("p-demande-nom").value.trim() || null });
   signaler(error ? "Demande impossible : " + error.message : "Demande envoyée. Si ce joueur a un compte GolfNexus, il la verra dans son profil.");
   rendreAcces();
 });
