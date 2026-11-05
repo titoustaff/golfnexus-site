@@ -3754,6 +3754,8 @@ function ouvrirAssistant() {
 }
 function fermerAssistant() {
   $("assistant").hidden = true; document.body.classList.remove("assistant-ouvert");
+  // un seul relevé, une fois la fiche Mérite ET la licence connues (sinon le 2e serait bloqué par la limite d'un par jour)
+  if ((Saison.fiche || {}).merite || Saison.licence?.num) lancerReleve(true);
   Saison.setFiche({ assistantFait: true }); ecran("tournois"); rendreBienvenue();
 }
 function rendreAssistant() {
@@ -3783,7 +3785,7 @@ function rendreAssistant() {
     cp: `<h2>Ton code postal</h2><p>Pour les distances jusqu'aux golfs et la carte autour de chez toi.</p>
       <input id="as-cp" inputmode="numeric" maxlength="5" pattern="[0-9]{5}" required placeholder="ex. 34270">${pied("Enregistrer")}`,
     fin: `<h2>C'est parti${prenom ? ", " + esc(prenom) : ""} ! ⛳</h2><p>Sur la carte, clique sur un tournoi puis sur l'étoile <b>☆</b> pour l'ajouter à <b>Ma saison</b>.
-      ${f.merite ? "Ton relevé est en cours : « Mes stats » se remplit dans 1 à 2 minutes." : ""}</p>
+      ${f.merite || Saison.licence?.num ? "Ton relevé va démarrer : « Mes stats », ta saison et tes places obtenues se remplissent dans 1 à 2 minutes." : ""}</p>
       ${asst.etapes.some((x) => ["licence", "cp"].includes(x)) ? `<p class="meta">Ce que tu as passé reste dans l'encadré « Bienvenue » en haut de la page.</p>` : ""}
       <div class="as-pied"><span></span><button type="submit" class="btn plein">Voir les tournois</button></div>`,
   }[k];
@@ -3820,7 +3822,7 @@ $("assistant").addEventListener("submit", async (e) => {
       const n = $("as-lic").value.replace(/\s/g, "");
       if (!/^\d{6,12}$/.test(n)) throw new Error("6 à 12 chiffres");
       const { data, error } = await sb.from("profils").update({ licence: n }).eq("id", Saison.moi.id).select("licence,licence_le,licence_verif").maybeSingle();
-      if (error) throw error; Saison.licence = { num: data.licence, le: data.licence_le, verif: data.licence_verif }; lancerReleve(true);
+      if (error) throw error; Saison.licence = { num: data.licence, le: data.licence_le, verif: data.licence_verif };
     } else if (k === "cp") {
       const cp = $("as-cp").value.trim(); if (!/^\d{5}$/.test(cp)) throw new Error("5 chiffres");
       const L = await communesDe(cp); if (!L.length) throw new Error("code postal inconnu");
@@ -3841,7 +3843,7 @@ $("assistant").addEventListener("click", async (e) => {
     try {
       Saison.setFiche({ sexe: asst.sexe, nom: Saison.fiche.nom || titre(`${x.PRENOM} ${x.NOM}`), club: Saison.fiche.club || titre(x.GOLF || "") });
       await majMerite(x.CODE, { nom: x.NOM, prenom: x.PRENOM });
-      lancerReleve(true); suivant();
+      suivant();   // le relevé part à la fin de l'assistant (fiche Mérite + licence d'un coup)
     } catch (err) { b.disabled = false; msgAs("Lecture de la fiche impossible : " + (err.message || err)); }
   }
 });
