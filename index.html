@@ -3731,7 +3731,7 @@ function etapesAccueil() {
     E.push({ ok: !!f.merite, t: "Trouve ta fiche Mérite", d: "index, moyenne vs SSS : sert à estimer ta place", go: "profil" });
     E.push({ ok: !!Saison.licence?.num, t: "Saisis ta licence ffgolf", d: "pour retrouver tes places obtenues et tes stats", go: "profil", focus: "p-licence" });
   }
-  E.push({ ok: !!f.cp, t: "Ton code postal", d: "pour les distances jusqu'aux golfs", go: "profil", focus: "p-cp" });
+  if (Saison.role !== "coach") E.push({ ok: !!f.cp, t: "Ton code postal", d: "pour les distances jusqu'aux golfs", go: "profil", focus: "p-cp" });
   if (!coachSeul()) E.push({ ok: aTournoi, t: "Choisis tes premiers tournois", d: "l'étoile ☆ d'un tournoi l'ajoute à « Ma saison »", go: "tournois" });
   return E;
 }
@@ -3770,7 +3770,7 @@ function etapesAssistant() {
   if (!coachSeul() && !f.merite && !f.pasMerite) E.push("merite");
   if (!f.assistantFait) {
     if (!coachSeul() && !Saison.licence?.num) E.push("licence");
-    if (!f.cp) E.push("cp");
+    if (!f.cp && Saison.role !== "coach") E.push("cp");   // un coach n'a pas à dire où il habite
   }
   return E;
 }
