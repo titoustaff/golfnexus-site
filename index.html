@@ -3148,20 +3148,48 @@ async function htmlJoueurs() {
 }
 
 // ---- Équipes : le coach range ses joueurs (accès accepté) ; un joueur peut être dans plusieurs équipes
+// équipes types proposées au coach (créées une seule fois, à sa première visite ; ensuite libre de tout changer)
+const EQUIPES_TYPES = ["Équipe 1 Messieurs", "Équipe 1 Dames", "Mid-Am Messieurs", "Mid-Am Dames", "Seniors Messieurs", "Seniors Dames", "U16 Garçons", "U16 Filles"];
+async function equipesTypes(existantes = []) {
+  const manquent = EQUIPES_TYPES.filter((n) => !existantes.includes(n));
+  if (manquent.length) { const { error } = await sb.from("equipes").insert(manquent.map((nom) => ({ nom }))); if (error) throw error; }
+}
+// joueurs qui correspondent à l'équipe d'après son nom (sexe : Messieurs/Garçons, Dames/Filles ; âge : U12/U14/U16, Mid-Am 25+, Seniors 50+)
+function correspondEquipe(nom, j) {
+  const n = plier(nom), an = new Date().getFullYear(), age = j.naissance ? an - j.naissance : null;
+  if (/messieurs|garcons|hommes/.test(n) && j.sexe === "D") return false;
+  if (/dames|filles|femmes/.test(n) && j.sexe === "H") return false;
+  const u = n.match(/u(\d\d)/); if (u && age != null && age > +u[1]) return false;
+  if (/mid/.test(n) && age != null && age < 25) return false;
+  if (/senior/.test(n) && age != null && age < 50) return false;
+  return true;
+}
+function optionsEquipe(nom, dispo) {
+  const o = (j) => `<option value="${esc(j.joueur_id)}">${esc(j.nom || j.libelle || j.licence)}</option>`;
+  const oui = dispo.filter((j) => correspondEquipe(nom, j)), non = dispo.filter((j) => !correspondEquipe(nom, j));
+  return oui.map(o).join("") + (non.length ? `<optgroup label="Ne correspond pas à l'équipe (sexe, âge)">${non.map(o).join("")}</optgroup>` : "");
+}
 async function htmlEquipes() {
-  const [E, J] = await Promise.all([sb.from("equipes").select("id,nom,equipe_joueurs(joueur_id)").order("nom"), sb.rpc("mes_joueurs")]);
+  let [E, J] = await Promise.all([sb.from("equipes").select("id,nom,equipe_joueurs(joueur_id)").order("nom"), sb.rpc("mes_joueurs")]);
   if (E.error) throw E.error;
+  if (!(E.data || []).length && !Saison.fiche.equipesTypes) {   // première visite : équipes types
+    await equipesTypes(); Saison.setFiche({ equipesTypes: true });
+    E = await sb.from("equipes").select("id,nom,equipe_joueurs(joueur_id)").order("nom");
+  }
+  const ordre = (n) => { const i = EQUIPES_TYPES.indexOf(n); return i < 0 ? 99 : i; };
+  E.data = (E.data || []).sort((a, b) => ordre(a.nom) - ordre(b.nom) || a.nom.localeCompare(b.nom, "fr"));
   const ok = (J.data || []).filter((j) => j.statut === "accepte"), nomDe = (id) => ok.find((j) => j.joueur_id === id);
   let h = `<form class="bloc c-form" id="co-eq-form"><input id="co-eq-nom" maxlength="60" required placeholder="nouvelle équipe (ex. Équipe 1, U16, Mid-Am)" aria-label="Nom de l'équipe">
-    <button type="submit" class="btn plein">Créer l'équipe</button></form>`;
+    <button type="submit" class="btn plein">Créer l'équipe</button>
+    ${EQUIPES_TYPES.some((n) => !(E.data || []).some((e) => e.nom === n)) ? `<button type="button" class="btn" id="co-eq-types">Ajouter les équipes types</button>` : ""}</form>`;
   if (!ok.length) h += `<div class="bloc vide">Aucun joueur suivi pour l'instant : ajoute des joueurs dans l'onglet « Joueurs » (accès accepté), puis range-les ici.</div>`;
   for (const e of E.data || []) {
     const membres = (e.equipe_joueurs || []).map((m) => m.joueur_id), dispo = ok.filter((j) => !membres.includes(j.joueur_id));
     h += `<div class="bloc co-equipe"><div class="co-eq-tete"><h3>${esc(e.nom)} <small>${membres.length} joueur${membres.length > 1 ? "s" : ""}</small></h3>
-      <button type="button" class="lien" data-eq-cal="${esc(e.id)}">Calendrier</button><button type="button" class="lien" data-eq-suppr="${esc(e.id)}">Supprimer</button></div>
+      <button type="button" class="lien" data-eq-cal="${esc(e.id)}">Calendrier</button><button type="button" class="lien" data-eq-nom="${esc(e.id)}" data-nom="${esc(e.nom)}">Renommer</button><button type="button" class="lien" data-eq-suppr="${esc(e.id)}">Supprimer</button></div>
       <div class="co-puces">${membres.map((id) => { const j = nomDe(id); return `<span class="co-puce">${esc(j?.nom || j?.libelle || "joueur")}${j && infoJoueur(j) ? ` <small>${esc(infoJoueur(j))}</small>` : ""}
         <button type="button" aria-label="Retirer de l'équipe" data-eq-retirer="${esc(e.id)}|${esc(id)}">×</button></span>`; }).join("") || `<span class="meta">Aucun joueur dans cette équipe.</span>`}</div>
-      ${dispo.length ? `<div class="c-form co-ajout"><select data-eq-choix="${esc(e.id)}" aria-label="Joueur à ajouter">${dispo.map((j) => `<option value="${esc(j.joueur_id)}">${esc(j.nom || j.libelle || j.licence)}</option>`).join("")}</select>
+      ${dispo.length ? `<div class="c-form co-ajout"><select data-eq-choix="${esc(e.id)}" aria-label="Joueur à ajouter">${optionsEquipe(e.nom, dispo)}</select>
         <button type="button" class="btn" data-eq-ajouter="${esc(e.id)}">Ajouter</button></div>` : ""}</div>`;
   }
   return h;
@@ -3207,8 +3235,15 @@ $("co-contenu").addEventListener("click", async (e) => {
   if (b.dataset.coOnglet) { co.onglet = b.dataset.coOnglet; rendreCoach(); return; }
   if (b.dataset.coOuvrir) { const t = tournoiDe(b.dataset.coOuvrir); if (t) ouvrir(t); return; }
   if (b.dataset.eqCal) { co.equipe = b.dataset.eqCal; co.onglet = "calendrier"; rendreCoach(); return; }
+  if (b.id === "co-eq-types") {
+    const E = await sb.from("equipes").select("nom");
+    try { await equipesTypes((E.data || []).map((e) => e.nom)); signaler("Équipes types ajoutées."); } catch (err) { signaler("Impossible : " + err.message); }
+    rendreCoach(); return;
+  }
   let r = null;
-  if (b.dataset.eqSuppr) { if (!confirm("Supprimer cette équipe ? (les joueurs restent suivis)")) return; r = await sb.from("equipes").delete().eq("id", b.dataset.eqSuppr); }
+  if (b.dataset.eqNom) { const n = prompt("Nouveau nom de l'équipe :", b.dataset.nom || ""); if (!n || !n.trim()) return;
+    r = await sb.from("equipes").update({ nom: n.trim().slice(0, 60) }).eq("id", b.dataset.eqNom); }
+  else if (b.dataset.eqSuppr) { if (!confirm("Supprimer cette équipe ? (les joueurs restent suivis)")) return; r = await sb.from("equipes").delete().eq("id", b.dataset.eqSuppr); }
   else if (b.dataset.eqRetirer) { const [eq, j] = b.dataset.eqRetirer.split("|"); r = await sb.from("equipe_joueurs").delete().eq("equipe_id", eq).eq("joueur_id", j); }
   else if (b.dataset.eqAjouter) { const j = document.querySelector(`[data-eq-choix="${CSS.escape(b.dataset.eqAjouter)}"]`)?.value; if (!j) return;
     r = await sb.from("equipe_joueurs").insert({ equipe_id: b.dataset.eqAjouter, joueur_id: j }); }
