@@ -606,6 +606,8 @@ body:not(.verrou) #accueil { display: none; }
 .vue-bandeau { background: var(--jaune); color: #2e2400; text-align: center; padding: 6px 10px; font-size: 13px; font-weight: 600; }
 .vue-bandeau button { margin-left: 8px; }
 .p-inv-mineur { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; } #p-inviter { flex-wrap: wrap; margin-top: 8px; }
+.acces-ligne .structure { font-size: 13px; color: var(--texte); } .acces-ligne .structure i { color: var(--doux); font-style: normal; }
+#p-inviter .p-inv-mineur input { width: auto; height: auto; flex: none; min-width: 0; margin: 0; }
 
 </style>
 </head>
@@ -1816,9 +1818,10 @@ const Saison = {
     const L = await sb.from("saisons").select("id,nom,annee").eq("user_id", user.id);
     const ids = (L.data || []).map((l) => l.id);
     const [I, P] = await Promise.all([ids.length ? sb.from("saison_tournois").select("saison_id,tournoi_id,statut,note,ajoute_le").in("saison_id", ids) : { data: [] },
-      sb.from("profils").select("domicile_nom,lat,lon,fiche,licence,licence_le,licence_verif,role,mineur,parent_valide_le").eq("id", user.id).maybeSingle()]);
+      sb.from("profils").select("domicile_nom,lat,lon,fiche,licence,licence_le,licence_verif,role,mineur,parent_valide_le,structure_type,structure_nom").eq("id", user.id).maybeSingle()]);
     const err = L.error || I.error || P.error; if (err) throw err;
     this.role = P.data?.role || "joueur"; this.mineur = !!P.data?.mineur; this.parentValide = P.data?.parent_valide_le || null;
+    this.structure = { type: P.data?.structure_type || "", nom: P.data?.structure_nom || "" };
     // places obtenues : rangées par la collecte du lundi (pipeline/perso.py), seulement la ligne du joueur
     const RP = await sb.from("resultats_perso").select("tournoi_id,place,classes,inscrits,tours,total,par,serie,lu_le,trous,pars,parcours").eq("user_id", user.id);
     this.resultats = Object.fromEntries((RP.data || []).map((r) => [r.tournoi_id, r]));
@@ -2954,6 +2957,7 @@ $("a-lien").addEventListener("click", async () => {
 // ------------------------------------------------------------------ coachs, joueurs, administration (05/11)
 // Coach : DEMANDE l'accès à un joueur par sa licence ; le joueur (ou son parent pour un mineur) ACCEPTE.
 // Ensuite le coach choisit le joueur dans « Vue » (bandeau) : sa saison et ses stats en lecture seule.
+const STRUCTURES = { club: "club", ligue: "ligue", academie: "académie", pole: "pôle / comité", independant: "coach indépendant" };
 function selecteurVue() {
   const J = Saison.joueurs || [];
   if (!J.length || Saison.role === "joueur") return "";
@@ -3002,7 +3006,7 @@ async function rendreAcces() {
   const lib = { demande: "en attente", accepte: "accès accordé", refuse: "refusé" };
   const coachs = C.data || [];
   h += `<div class="bloc p-bloc"><h3>Coachs qui suivent ce joueur</h3>
-    ${coachs.length ? coachs.map((c) => `<div class="acces-ligne"><div class="qui"><b>${esc(c.nom || "")}</b><small>${esc(c.email || "")} · demandé le ${fmtDate(String(c.demande_le).slice(0, 10))}</small></div>
+    ${coachs.length ? coachs.map((c) => `<div class="acces-ligne"><div class="qui"><b>${esc(c.nom || "")}</b>${c.structure_nom ? ` · <span class="structure">${esc(c.structure_nom)} <i>(${esc(STRUCTURES[c.structure_type] || "")})</i></span>` : ` · <span class="structure">structure non renseignée</span>`}<small>${esc(c.email || "")} · demandé le ${fmtDate(String(c.demande_le).slice(0, 10))}</small></div>
       <span class="statut-acces ${c.statut}">${lib[c.statut]}</span>
       ${c.statut !== "accepte" ? `<button type="button" class="btn plein" data-acces-ok="${esc(c.coach_id)}">Accepter</button>` : ""}
       ${c.statut === "demande" ? `<button type="button" class="btn" data-acces-non="${esc(c.coach_id)}">Refuser</button>` : ""}
@@ -3011,6 +3015,13 @@ async function rendreAcces() {
     ${Saison.mineur && !Saison.parentValide && coachs.some((c) => c.statut === "demande") ? `<p class="meta">Valide d'abord le compte (encadré ci-dessus) pour pouvoir accepter un coach.</p>` : ""}</div>`;
   if (J.data) {
     const joueurs = J.data;
+    const st = Saison.structure || {};
+    h += `<form class="bloc p-bloc ${st.type && st.nom ? "" : "p-parent"}" id="p-structure"><h3>Ma structure (coach)</h3>
+      <p class="meta">Les joueurs et les parents la voient dans ta demande d'accès : ils doivent savoir qui tu représentes. Obligatoire pour demander un accès.</p>
+      <div class="c-form"><select id="p-st-type" aria-label="Type de structure"><option value="">Type…</option>${Object.entries(STRUCTURES).map(([k, v]) =>
+        `<option value="${k}" ${k === st.type ? "selected" : ""}>${v}</option>`).join("")}</select>
+        <input id="p-st-nom" maxlength="80" placeholder="ex. Golf de Massane, Ligue Occitanie, Académie…" value="${esc(st.nom || "")}" aria-label="Nom de la structure">
+        <button type="submit" class="btn plein">Enregistrer</button></div></form>`;
     h += `<div class="bloc p-bloc"><h3>Mes joueurs (coach)</h3>
       <form class="c-form" id="p-demande"><input id="p-demande-lic" inputmode="numeric" placeholder="licence ffgolf du joueur" aria-label="Licence du joueur" required>
         <input id="p-demande-nom" type="text" maxlength="60" placeholder="nom du joueur (pour toi)" aria-label="Nom du joueur">
@@ -3047,6 +3058,15 @@ $("p-acces").addEventListener("click", async (e) => {
   rendreAcces();
 });
 $("p-acces").addEventListener("submit", async (e) => {
+  if (e.target.id === "p-structure") {
+    e.preventDefault();
+    const type = $("p-st-type").value, nom = $("p-st-nom").value.trim();
+    if (!type || !nom) { signaler("Choisis le type et indique le nom de ta structure."); return; }
+    const { error } = await sb.from("profils").update({ structure_type: type, structure_nom: nom }).eq("id", Saison.moi.id);
+    if (error) { signaler("Enregistrement impossible : " + error.message); return; }
+    Saison.structure = { type, nom }; signaler("Structure enregistrée : les joueurs la verront dans tes demandes."); rendreAcces();
+    return;
+  }
   if (e.target.id === "p-inviter") {
     e.preventDefault();
     const err = await inviter($("p-inv-email").value.trim().toLowerCase(), $("p-inv-mineur").checked ? "mineur" : "joueur", $("p-inv-nom").value.trim());
@@ -3060,7 +3080,7 @@ $("p-acces").addEventListener("submit", async (e) => {
   const lic = $("p-demande-lic").value.replace(/\s/g, "");
   if (!/^\d{6,12}$/.test(lic)) { signaler("Licence : chiffres uniquement."); return; }
   const { error } = await sb.rpc("demander_acces", { lic, nom: $("p-demande-nom").value.trim() || null });
-  signaler(error ? "Demande impossible : " + error.message : "Demande envoyée. Si ce joueur a un compte GolfNexus, il la verra dans son profil.");
+  signaler(error ? (/structure_manquante/.test(error.message) ? "Renseigne d'abord ta structure (club, ligue, académie…) : les joueurs doivent savoir qui tu représentes." : "Demande impossible : " + error.message) : "Demande envoyée. Si ce joueur a un compte GolfNexus, il la verra dans son profil.");
   rendreAcces();
 });
 
