@@ -837,6 +837,47 @@ body.assistant-ouvert { overflow: hidden; }
   .ecran-profil > .s-tete { grid-column: 1 / -1; }
 }
 
+/* Carte de score d'un tournoi (Mes stats → Tous les tournois comptés) — 06/11 */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.st-col-carte { width: 34px; padding-right: 0 !important; }
+.st-carte-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--bord); background: var(--carte); color: var(--doux); cursor: pointer; }
+.st-carte-btn.detail { color: var(--vert); border-color: var(--vert-2); background: var(--sauge-pale); }
+.st-carte-btn:hover, .st-carte-btn:focus-visible { color: #fff; background: var(--vert-2); border-color: var(--vert-2); outline: none; }
+.cs-pastilles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 14px 0 4px; }
+.cs-pastilles div { background: var(--carte); box-shadow: var(--ombre); border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; }
+.cs-pastilles b { font-size: 20px; color: var(--vert); font-variant-numeric: tabular-nums; }
+.cs-pastilles sup { font-size: .55em; }
+.cs-pastilles span { font-size: 11px; color: var(--doux); }
+.cs-tours, .cs-carte { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; background: var(--carte); border-radius: 10px; overflow: hidden; box-shadow: var(--ombre); }
+.cs-tours th, .cs-tours td { padding: 7px 10px; border-bottom: 1px solid var(--bord); text-align: left; }
+.cs-tours thead th, .cs-carte thead th { font-size: 11px; font-weight: 600; color: var(--doux); text-transform: none; letter-spacing: 0; }
+.cs-tours .n, .cs-carte .n { text-align: center; }
+.cs-tours tbody tr:last-child > * { border-bottom: 0; }
+.cs-carte { font-size: 12px; min-width: 640px; }
+.cs-carte th, .cs-carte td { padding: 5px 2px; border-bottom: 1px solid var(--bord); }
+.cs-carte th:first-child { padding-left: 10px; text-align: left; width: 34px; }
+.cs-carte .cs-par td, .cs-carte .cs-par th { color: var(--doux); font-weight: 600; background: var(--sauge-pale); }
+.cs-carte .cs-sous { font-weight: 700; color: var(--texte); background: var(--sauge-pale); }
+.cs-carte .cs-tot { font-weight: 800; color: var(--vert); background: var(--sauge-pale); padding-right: 8px; }
+.cs-carte tbody tr:last-child > * { border-bottom: 0; }
+/* notation d'une vraie carte : birdie = cercle, eagle = double cercle, bogey = carré, double = carré plein */
+.cs-s { display: inline-grid; place-items: center; width: 22px; height: 22px; line-height: 1; font-weight: 600; box-sizing: border-box; }
+.cs-s.bir { border: 1.5px solid var(--st-bir); border-radius: 50%; color: var(--st-bir); }
+.cs-s.eag { border: 1.5px solid var(--st-bir); border-radius: 50%; box-shadow: 0 0 0 2px var(--carte), 0 0 0 3.5px var(--st-bir); color: var(--st-bir); }
+.cs-s.bog { border: 1.5px solid var(--st-bog); border-radius: 3px; }
+.cs-s.dbl { background: var(--st-dbl); color: #fff; border-radius: 3px; }
+.cs-legende { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 2px 0; font-size: 12px; color: var(--doux); }
+.cs-legende > span { display: inline-flex; align-items: center; gap: 6px; }
+.cs-note { margin-top: 14px; }
+.cs-tours tbody th, .cs-carte tbody th { text-transform: none; letter-spacing: 0; font-weight: 700; color: var(--texte); }
+.cs-etroit { display: none; }
+.cs-demi { min-width: 0; margin-bottom: 10px; }
+@media (max-width: 640px) {
+  .cs-large { display: none; } .cs-etroit { display: block; }
+  .cs-demi .cs-s { width: 20px; height: 20px; }
+  .cs-tours { font-size: 12px; } .cs-tours th, .cs-tours td { padding: 6px 5px; }
+}
+
 </style>
 </head>
 <body class="verrou">
@@ -3206,15 +3247,72 @@ function rendreStats() {
 
   // tableau (vue tableau des données)
   if (T.length) h += blocSt("Tous les tournois comptés", `${T.length} tournois du ${LIBM} (ffgolf garde environ 12 mois glissants ; GolfNexus les conserve).${noteM}`, `
-    <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Circuit · catégorie</th><th title="Catégorie Mérite du tournoi (0 à 10) : force du champ, calculée par la ffgolf">Cat. Mérite</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
-    ${T.slice().reverse().map((t) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? `<span class="tag circ-${circuitDe(x)}">${esc(circuitLib(x))}</span>` : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
+    <div class="st-table"><table><thead><tr><th class="st-col-carte"><span class="sr">Carte de score</span></th><th>Date</th><th>Compétition</th><th>Circuit · catégorie</th><th title="Catégorie Mérite du tournoi (0 à 10) : force du champ, calculée par la ffgolf">Cat. Mérite</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
+    ${(st.lignesT = T.slice().reverse()).map((t, i) => `<tr><td class="st-col-carte">${t.tours?.length ? `<button type="button" class="st-carte-btn${scoreDe(t)?.trous ? " detail" : ""}" data-carte="${i}"
+      title="${scoreDe(t)?.trous ? "Ma carte de score : trou par trou et tour par tour" : "Mes tours sur ce tournoi"}" aria-label="Voir mes scores : ${esc(titre(t.nom))}">${ICONE_CARTE}</button>` : ""}</td><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? `<span class="tag circ-${circuitDe(x)}">${esc(circuitLib(x))}</span>` : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
     </tbody></table></div>`);
   // mise à jour à la demande (relevé immédiat, 1 fois par jour) ; dernière lecture du Mérite
   if (!Saison.demo) h += `<p class="meta st-maj">${der ? `Dernier relevé du ${LIBM} : ${moisLib(der.mois)}` : "Relevé"}${der?.lu_le ? ` (lu le ${fmtDate(String(der.lu_le).slice(0, 10))})` : ""}.
-    Relevé automatique chaque lundi · <button type="button" class="lien" id="st-releve">${Saison.releve === "en cours" ? "relevé en cours…" : "Mettre à jour maintenant"}</button> (une fois par jour).</p>`;
+    Mérite relu le lendemain de chaque parution, places et trou par trou chaque lundi · <button type="button" class="lien" id="st-releve">${Saison.releve === "en cours" ? "relevé en cours…" : "Mettre à jour maintenant"}</button> (une fois par jour).</p>`;
   C.innerHTML = h;
   simulation(der);
 }
+// ---- carte de score d'un tournoi (06/11) : clic sur une ligne de « Tous les tournois comptés »
+const ICONE_CARTE = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16M13 4v16"/></svg>`;
+// résultat relevé par la licence (trou par trou, place) pour une ligne du Mérite
+function scoreDe(m) { const t = tournoiDuMerite(m); const r = t && Saison.resultats?.[t.id]; return r ? { ...r, t } : t ? { t } : null; }
+function carteScore(m) {
+  const sc = scoreDe(m) || {}, t = sc.t, sx = (Saison.fiche?.sexe === "D") ? "D" : "H";
+  const tours = (sc.tours?.length ? sc.tours : m.tours || []).filter((x) => x > 0), nt = tours.length;
+  // SSS : celui de la ffgolf (Moy.SSS du Mérite) d'abord, sinon le repère de compétition
+  let sss = m.tours?.length && m.moy_sss != null ? moyenne(m.tours) - m.moy_sss : null, srcSss = "ffgolf";
+  if (sss == null && t) { const g = golfDe(t), pc = g && parcoursJoue(g, sc.parcours), rp = pc && repereCompet(pc, sx, t); sss = rp && (sx === "D" ? rp.sss_d : rp.sss_h); srcSss = "repère"; }
+  const trous = sc.trous || [], pars = sc.pars || [], parT = (k) => (pars[k] || []).reduce((a, b) => a + (b || 0), 0) || null;
+  const total = tours.reduce((a, b) => a + b, 0), parTot = pars.length ? pars.reduce((a, p) => a + (p || []).reduce((x, y) => x + (y || 0), 0), 0) : null;
+  const cls = (s, p) => (!s || !p ? "" : s - p <= -2 ? "eag" : s - p === -1 ? "bir" : s === p ? "par" : s - p === 1 ? "bog" : "dbl");
+  const compte = (k) => { const r = { eag: 0, bir: 0, par: 0, bog: 0, dbl: 0 }; (trous[k] || []).forEach((s, i) => { const c = cls(s, pars[k]?.[i]); if (c) r[c]++; }); return r; };
+  const neuf = (k, a) => { const v = (trous[k] || []).slice(a, a + 9); return v.length === 9 && v.every((x) => x > 0) ? v.reduce((x, y) => x + y, 0) : null; };
+  const pastille = (val, lib) => `<div><b>${val}</b><span>${lib}</span></div>`;
+  let h = `<h2 id="fiche-titre">${esc(titre(m.nom))}</h2>
+    <div class="sous">${fmtDate(m.date)}${t ? ` · ${esc(titre(t.golf_nom || t.golf || ""))}` : ""}${sc.parcours ? ` · parcours ${esc(titre(sc.parcours))}` : ""}
+      ${t ? ` <span class="tag circ-${circuitDe(t)}">${esc(circuitLib(t))}</span>` : ""}${m.cat ? ` <span class="tag" title="Catégorie Mérite du tournoi (force du champ, 0 à 10)">cat. Mérite ${esc(m.cat)}</span>` : ""}</div>
+    <div class="cs-pastilles">
+      ${pastille(esc(String(sc.place || m.place || "—")).replace(/^(\d+)/, "$1<sup>e</sup>"), sc.classes ? `sur ${sc.classes} classés` : "place")}
+      ${pastille(nt ? total : "—", `total · ${nt} tour${nt > 1 ? "s" : ""}`)}
+      ${parTot && trous.length === nt ? pastille(sg(total - parTot, 0), "par rapport au par") : sc.par != null ? pastille(sg(sc.par, 0), "par rapport au par") : ""}
+      ${sss ? pastille(sg(total / nt - sss, 2), `par tour vs SSS (${String(Math.round(sss * 10) / 10).replace(".", ",")})`) : ""}
+      ${m.points != null ? pastille(fx(m.points, 2), "points Mérite") : ""}
+    </div>`;
+  // tour par tour
+  h += `<h3>Tour par tour</h3><div class="defile"><table class="cs-tours"><thead><tr><th>Tour</th><th class="n">Score</th><th class="n">vs par</th><th class="n">vs SSS</th>
+    ${trous.length ? `<th class="n">Aller</th><th class="n">Retour</th><th class="n" title="eagles et birdies">Birdies</th><th class="n">Pars</th><th class="n">Bogeys</th><th class="n">Doubles +</th>` : ""}</tr></thead><tbody>
+    ${tours.map((x, k) => { const c = compte(k), pk = parT(k);
+      return `<tr><th>Tour ${k + 1}</th><td class="n"><b>${x}</b></td><td class="n">${pk ? sg(x - pk, 0) : "—"}</td><td class="n">${sss ? sg(x - sss, 1) : "—"}</td>
+      ${trous.length ? `<td class="n">${neuf(k, 0) ?? "—"}</td><td class="n">${neuf(k, 9) ?? "—"}</td><td class="n">${trous[k] ? c.eag + c.bir : "—"}</td><td class="n">${trous[k] ? c.par : "—"}</td><td class="n">${trous[k] ? c.bog : "—"}</td><td class="n">${trous[k] ? c.dbl : "—"}</td>` : ""}</tr>`; }).join("")}
+    </tbody></table></div>`;
+  // carte de score
+  if (trous.some(Boolean)) {
+    const ligne = (k) => { const s = trous[k] || [], p = pars[k] || [];
+      const cases = (a) => Array.from({ length: 9 }, (_, i) => `<td class="n"><span class="cs-s ${cls(s[a + i], p[a + i])}">${s[a + i] || "·"}</span></td>`).join("");
+      return `<tr><th>T${k + 1}</th>${cases(0)}<td class="n cs-sous">${neuf(k, 0) ?? ""}</td>${cases(9)}<td class="n cs-sous">${neuf(k, 9) ?? ""}</td><td class="n cs-tot">${tours[k] ?? ""}</td></tr>`; };
+    const p0 = pars.find(Boolean) || [];
+    const parCases = (a) => Array.from({ length: 9 }, (_, i) => `<td class="n">${p0[a + i] ?? ""}</td>`).join("");
+    const parSous = (a) => p0.slice(a, a + 9).reduce((x, y) => x + (y || 0), 0) || "";
+    // téléphone : deux demi-cartes empilées (aller, puis retour + total)
+    const demi = (a, lib) => `<table class="cs-carte cs-demi"><thead><tr><th>Trou</th>${Array.from({ length: 9 }, (_, i) => `<th class="n">${a + i + 1}</th>`).join("")}<th class="n cs-sous">${lib}</th>${a ? `<th class="n cs-tot">Total</th>` : ""}</tr>
+      <tr class="cs-par"><th>Par</th>${parCases(a)}<td class="n cs-sous">${parSous(a)}</td>${a ? `<td class="n cs-tot">${parSous(0) + parSous(9) || ""}</td>` : ""}</tr></thead><tbody>
+      ${tours.map((_, k) => { const sk = trous[k] || [], pk = pars[k] || [];
+        return `<tr><th>T${k + 1}</th>${Array.from({ length: 9 }, (_, i) => `<td class="n"><span class="cs-s ${cls(sk[a + i], pk[a + i])}">${sk[a + i] || "·"}</span></td>`).join("")}<td class="n cs-sous">${neuf(k, a) ?? ""}</td>${a ? `<td class="n cs-tot">${tours[k] ?? ""}</td>` : ""}</tr>`; }).join("")}</tbody></table>`;
+    h += `<h3>Carte de score</h3><div class="cs-etroit">${demi(0, "Aller")}${demi(9, "Retour")}</div><div class="defile cs-large"><table class="cs-carte"><thead><tr><th>Trou</th>${Array.from({ length: 9 }, (_, i) => `<th class="n">${i + 1}</th>`).join("")}<th class="n cs-sous">Aller</th>
+      ${Array.from({ length: 9 }, (_, i) => `<th class="n">${i + 10}</th>`).join("")}<th class="n cs-sous">Retour</th><th class="n cs-tot">Total</th></tr>
+      <tr class="cs-par"><th>Par</th>${parCases(0)}<td class="n cs-sous">${parSous(0)}</td>${parCases(9)}<td class="n cs-sous">${parSous(9)}</td><td class="n cs-tot">${parSous(0) + parSous(9) || ""}</td></tr></thead>
+      <tbody>${tours.map((_, k) => ligne(k)).join("")}</tbody></table></div>
+      <div class="cs-legende"><span><span class="cs-s eag">3</span> eagle</span><span><span class="cs-s bir">3</span> birdie</span><span><span class="cs-s par">4</span> par</span><span><span class="cs-s bog">5</span> bogey</span><span><span class="cs-s dbl">6</span> double ou +</span></div>`;
+  } else h += `<p class="meta cs-note">Pas de trou par trou pour ce tournoi : ${!t ? "il n'est pas dans le calendrier collecté par GolfNexus." : !sc.tours ? "il n'a pas été relevé avec ta licence (il faut qu'il soit dans ta saison ; relevé chaque lundi)." : "la ffgolf n'a pas publié les scores trou par trou."}</p>`;
+  h += `<p class="meta">${sss ? `SSS ${srcSss === "ffgolf" ? "de la ffgolf (déduit de ta moyenne vs SSS sur ce tournoi au Mérite)" : "du repère de compétition (tournoi absent du Mérite)"}. ` : ""}${t ? `<button type="button" class="lien" data-ouvrir="${esc(t.id)}">Voir la fiche du tournoi</button>` : ""}</p>`;
+  $("fiche-contenu").innerHTML = h; $("fiche").hidden = false; $("fiche-fermer").focus();
+}
+$("st-contenu").addEventListener("click", (e) => { const b = e.target.closest("[data-carte]"); if (b) carteScore(st.lignesT[+b.dataset.carte]); });
 function lectureTours(parN) {
   if (parN.length < 2) return "";
   const a = parN[0].v, z = parN.at(-1).v, best = parN.reduce((x, y) => (y.v < x.v ? y : x));
