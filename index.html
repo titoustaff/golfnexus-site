@@ -1019,7 +1019,7 @@ body.assistant-ouvert { overflow: hidden; }
         <label id="p-licence-lib">N° de licence ffgolf <input id="p-licence" type="text" inputmode="numeric" maxlength="12" placeholder="ex. 123456789"><small id="p-licence-aide"></small></label>
         <label>Sexe <select id="p-sexe"><option value="">—</option><option value="H">Messieurs</option><option value="D">Dames</option></select></label>
         <label>Année de naissance <input id="p-naissance" type="number" min="1920" max="2025" step="1" placeholder="ex. 2010"><small id="p-categorie"></small></label>
-        <label>Index <input id="p-index" type="text" inputmode="decimal" placeholder="ex. 4,2"></label>
+        <label>Index <input id="p-index" type="text" inputmode="decimal" placeholder="ex. 4,2"><small id="p-index-aide"></small></label>
         <label>Moyenne par rapport au SSS <input id="p-moy" type="text" inputmode="decimal" placeholder="ex. +5,1"><small id="p-moy-aide"></small></label>
         <label>Code postal du domicile <input id="p-cp" type="text" inputmode="numeric" maxlength="5" placeholder="ex. 34270"><select id="p-commune" hidden></select><small id="p-cp-aide"></small></label>
         <label>Distance maximale <span class="p-unite"><input id="p-dist" type="number" min="0" max="2000" step="10" placeholder="ex. 300"> km</span><small>depuis ton domicile</small></label>
@@ -2686,7 +2686,12 @@ function rendreProfil() {
   if (L && L.length > 1) sel.innerHTML = L.map((c, i) => `<option value="${i}" ${dom && dom.nom === domNom(c, f.cp) ? "selected" : ""}>${esc(c.nom)}</option>`).join("");
   $("p-cp-aide").textContent = L && !L.length ? "Code postal inconnu." : dom ? "Domicile : " + dom.nom : "Sert à calculer les distances jusqu'aux golfs.";
   $("p-categorie").textContent = f.naissance ? `${categorieAge(f.naissance, an)} en ${an}` : "";
-  $("p-moy-aide").textContent = m ? "Rempli depuis ta fiche Mérite (12 mois glissants)." : "Ta moyenne de score par tour, par rapport au SSS (ex. +5,1). Elle figure sur ta fiche Mérite ffgolf.";
+  // donnée renvoyée par la ffgolf (fiche Mérite, relue chaque jour) : affichée, non modifiable ; saisie à la main seulement sans elle
+  const ffgMoy = m?.moy != null, ffgIdx = m?.index != null;
+  $("p-moy").disabled = ffgMoy; $("p-index").disabled = ffgIdx;
+  $("p-moy-aide").textContent = ffgMoy ? "Donnée ffgolf (ta fiche Mérite, 12 mois glissants), mise à jour automatiquement."
+    : "Ta moyenne de score par tour, par rapport au SSS (ex. +5,1) : pas de valeur ffgolf, saisis-la à la main.";
+  $("p-index-aide").textContent = ffgIdx ? "Donnée ffgolf (ta fiche Mérite), mise à jour automatiquement." : "";
 }
 $("ecran-profil").addEventListener("submit", async (e) => {
   if (e.target.id !== "p-cherche-f") return;
@@ -2970,18 +2975,25 @@ function rendreStats() {
   const J = R.length ? R.map((r) => ({ date: r.t.debut, nom: r.t.nom, place: r.place, tours: r.tours || [] })) : T;
   const J12 = J.filter((t) => t.date >= il12), source = R.length ? `tournois ${LIB} relevés` : `tournois comptés au ${LIBM}`;
 
-  // ---- tours vs SSS : SSS du repère de compétition pour les tournois relevés ; sinon SSS déduit du Mérite
-  // (moyenne des tours − « Moy.SSS »)
-  const tours = [];
+  // ---- tours vs SSS. Priorité à la donnée ffgolf : « Moy.SSS » du tournoi dans la fiche Mérite (SSS réel du jour ;
+  // SSS = moyenne des tours − Moy.SSS). Notre SSS (repère de compétition) seulement pour un tournoi absent du Mérite.
+  const tours = [], vus = new Set(), cleM = (m) => m.date + "|" + m.nom;
   const sx = f.sexe === "D" ? "D" : "H";
+  const ajouterTours = (sc, sss, date, nom, src) => sc.forEach((x, i) => x > 0 && tours.push({ date, nom, n: i + 1, d: x - sss, score: x, src }));
+  // 1. tournois relevés de ce circuit (on connaît leur circuit)
   for (const r of R) {
+    const m = meriteDe(r.t);
+    if (m?.tours?.length && m.moy_sss != null) { vus.add(cleM(m)); ajouterTours(m.tours, moyenne(m.tours) - m.moy_sss, r.t.debut, r.t.nom, "ffgolf"); continue; }
     const g = golfDe(r.t), pc = g && parcoursJoue(g, r.parcours), rp = pc && repereCompet(pc, sx, r.t), sss = rp && (sx === "D" ? rp.sss_d : rp.sss_h);
-    if (sss && r.tours?.length) r.tours.forEach((sc, i) => sc > 0 && tours.push({ date: r.t.debut, nom: r.t.nom, n: i + 1, d: sc - sss, score: sc }));
+    if (sss && r.tours?.length) ajouterTours(r.tours, sss, r.t.debut, r.t.nom, "repère");
   }
-  if (!tours.length) for (const t of T) {
-    if (!t.tours?.length || t.moy_sss == null) continue;
-    const sss = moyenne(t.tours) - t.moy_sss;
-    t.tours.forEach((sc, i) => tours.push({ date: t.date, nom: t.nom, n: i + 1, d: sc - sss, score: sc }));
+  // 2. tournois du Mérite de ce circuit non relevés : gardés s'ils sont de ce circuit (ou d'un circuit inconnu)
+  for (const m of T) {
+    if (vus.has(cleM(m)) || !m.tours?.length || m.moy_sss == null) continue;
+    const mots = plier(m.nom).split(/[^a-z0-9]+/).filter((w) => w.length > 3 && !MOTS_VIDES.has(w));
+    const t = etat.tournois.find((x) => m.date >= x.debut && m.date <= x.fin && mots.some((w) => plier(x.nom).includes(w)));
+    if (t && circuitDe(t) !== st.circuit) continue;
+    ajouterTours(m.tours, moyenne(m.tours) - m.moy_sss, m.date, m.nom, "ffgolf");
   }
   tours.sort((a, b) => a.date.localeCompare(b.date) || a.n - b.n);
   const tours12 = tours.filter((x) => x.date >= il12), ds12 = tours12.map((x) => x.d);
@@ -3025,7 +3037,7 @@ function rendreStats() {
     h += blocSt("Ton niveau tour par tour", "Score de chaque tour par rapport au SSS du parcours (moins = mieux) ; la courbe suit la moyenne des 5 derniers tours.", `
       <div class="st-legende"><span><i class="c1"></i>moyenne des 5 derniers tours</span><span><i class="pt c2"></i>chaque tour</span></div>
       ${svgLignes({ series: [
-        { nom: "Tour", cls: "c2", points: true, pts: tours.map((x) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +x.d.toFixed(1), tip: `${x.score} (${sg(x.d)}), tour ${x.n} de « ${esc(titre(x.nom))} »` })) },
+        { nom: "Tour", cls: "c2", points: true, pts: tours.map((x) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +x.d.toFixed(1), tip: `${x.score} (${sg(x.d)}), tour ${x.n} de « ${esc(titre(x.nom))} »${x.src === "repère" ? " · SSS du repère (absent du Mérite)" : ""}` })) },
         { nom: "Moyenne 5 tours", cls: "c1", pts: tours.map((x, i) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +glis[i].toFixed(2), tip: sg(glis[i]) })) }],
         fmt: (v) => sg(v), zero: true, h: 240, W: st.l1,
         // l'axe descend au moins à −5 (et jusqu'à −12 au plus) : les tours sous le SSS doivent se voir
