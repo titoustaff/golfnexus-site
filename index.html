@@ -790,6 +790,46 @@ body.assistant-ouvert { overflow: hidden; }
 .st-table .tag.circ-seniors, .st-table .tag.circ-mid { background: #e3eefc; color: #1f4b85; border-color: #9dbbe6; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .st-table .tag.circ-jeunes { background: #4a3a05; color: #ffe08a; } :root:not([data-theme="light"]) .st-table .tag.circ-seniors, :root:not([data-theme="light"]) .st-table .tag.circ-mid { background: #16304f; color: #b9d3f5; } }
 
+/* Mon profil — passe de style du 06/11 */
+/* Mérites : un tableau, une ligne par Mérite, colonnes alignées (comparer Jeunes / Adultes d'un coup d'œil) */
+.p-carte .meta { margin-top: 2px; }
+.p-merites { width: 100%; border-collapse: separate; border-spacing: 0; margin: 12px 0 8px; font-size: 13px; }
+.p-merites th, .p-merites td { padding: 9px 12px; text-align: left; vertical-align: top; white-space: nowrap; }
+.p-merites thead th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--doux); border-bottom: 1px solid var(--bord); }
+.p-merites thead small { display: block; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.p-merites tbody tr + tr > * { border-top: 1px solid var(--bord); }
+.p-merites tbody th { font-size: 14px; color: var(--texte); text-transform: none; letter-spacing: 0; }
+.p-merites tbody th small { text-transform: none; letter-spacing: 0; }
+.p-merites tbody th small { display: block; font-weight: 500; font-size: 11px; color: var(--doux); }
+.p-merites td b { font-size: 19px; color: var(--vert); font-variant-numeric: tabular-nums; }
+.p-merites td sup { font-size: .6em; }
+.p-merites td small { display: block; font-size: 11px; color: var(--doux); margin-top: 1px; }
+.p-merites td .mieux, .p-merites td .moins { font-size: 11px; font-weight: 700; margin-left: 6px; }
+.p-merites td .mieux { color: var(--vert-2); }
+.p-merites td .moins { color: #b45309; }
+.p-merite-pied { line-height: 1.6; }
+/* champs fournis par la ffgolf ou fixés (licence, index) : lecture seule, visiblement */
+.p-champs input:disabled { background: transparent; border-style: dashed; color: var(--texte); opacity: 1; cursor: default;
+  padding-right: 30px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235b6b5f' stroke-width='2'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; }
+.p-champs small { font-size: 11px; line-height: 1.35; }
+/* interrupteur « appliquer la distance » : toute la largeur, sur une ligne, pas en majuscules */
+.p-champs .p-bascule { grid-column: 1 / -1; padding: 10px 12px; border-radius: 10px; background: var(--sauge-pale); }
+.p-champs .p-bascule .bascule.petite { flex-direction: row; align-items: center; text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; color: var(--texte); }
+.p-champs .p-bascule small { margin-left: 37px; }
+#p-form > .meta { margin: 14px 0 0; }
+.p-merites .court { display: none; }
+@media (max-width: 560px) {
+  .p-merites { font-size: 12px; }
+  .p-merites th, .p-merites td { padding: 8px 5px; }
+  .p-merites thead th { font-size: 10px; letter-spacing: .02em; }
+  .p-merites .long { display: none; } .p-merites .court { display: inline; }
+  .p-merites td b { font-size: 16px; }
+  .p-merites td .mieux, .p-merites td .moins { display: block; margin: 1px 0 0; }
+  .p-merites td, .p-merites td small { white-space: normal; }
+  .p-merites td small { max-width: 64px; }
+}
+
 </style>
 </head>
 <body class="verrou">
@@ -1037,7 +1077,7 @@ body.assistant-ouvert { overflow: hidden; }
         <div class="p-bascule"><label class="bascule petite"><input id="p-dist-auto" type="checkbox"><span class="piste" aria-hidden="true"></span>Appliquer cette distance à la carte et à la liste à chaque ouverture</label>
           <small>Tu peux toujours la changer ou l'enlever sur la carte : elle reviendra à la prochaine ouverture.</small></div>
       </div>
-      <p class="meta">Ta fiche est enregistrée dans ton compte (ou dans ce navigateur sans compte). Elle sert à estimer ta <b>place probable</b> sur chaque tournoi.</p>
+      <p class="meta">Ta fiche est enregistrée dans ton compte. Avec tes Mérites, elle sert à estimer ta <b>place probable</b> sur chaque tournoi.</p>
     </form>
     <div class="bloc p-bloc" id="p-rappels-bloc">
       <h3>Rappels d'inscription</h3>
@@ -2662,14 +2702,15 @@ function rendreProfil() {
     <div class="p-carte">
       <div class="p-nom"><b>${esc(m.prenom || "")} ${esc(m.nom || "")}</b><span>${esc(titre(m.golf || ""))}</span></div>
       <div class="meta">${esc(comm.categorie || m.categorie || "")} · ${esc(comm.statut || m.statut || "")} · index <b>${idx != null ? (+idx).toLocaleString("fr-FR") : "—"}</b></div>
-      ${secs.map(({ l, d }) => `<h4 class="p-merite-titre">Mérite ${LISTES_M[l]}${d.mois ? ` <small>${moisLib(d.mois)}</small>` : ""}</h4>
-      <div class="p-chiffres">
-        <div><b>${d.place != null ? `${d.place}<small>e</small>` : "NC"}</b><span>${d.place == null ? "non classé · " : ""}au Mérite${d.place_prec ? ` (${d.place_prec}<small>e</small> le mois d'avant)` : ""}${d.meilleure ? ` · meilleure : ${d.meilleure}<small>e</small>` : ""}</span></div>
-        <div><b>${signe(d.moy == null ? null : +d.moy)}</b><span>moyenne vs SSS (12 mois)</span></div>
-        <div><b>${signe(d.moy6 == null ? null : +d.moy6)}</b><span>moyenne vs SSS (6 mois)</span></div>
-        <div><b>${d.nb ?? "—"} / ${d.divisor ?? "—"}</b><span>tournois / diviseur</span></div>
-      </div>`).join("")}
-      <div class="meta">Relevé ${lu ? `le ${fmtDate(String(lu).slice(0, 10))}` : "pas encore fait"} · mis à jour le lendemain de chaque parution du Mérite
+      <div class="defile"><table class="p-merites">
+        <thead><tr><th>Mérite</th><th>Place</th><th><span class="long">Moyenne vs SSS</span><span class="court">Moy. SSS</span><small>12 mois</small></th><th><span class="long">Moyenne vs SSS</span><span class="court">Moy. SSS</span><small>6 mois</small></th><th><span class="long">Tournois</span><span class="court">Tourn.</span><small>/ diviseur</small></th></tr></thead>
+        <tbody>${secs.map(({ l, d }) => { const dl = d.place && d.place_prec ? d.place_prec - d.place : 0;
+          return `<tr><th scope="row">${LISTES_M[l]}${d.mois ? `<small>${moisLib(d.mois)}</small>` : ""}</th>
+          <td><b>${d.place != null ? `${d.place}<sup>e</sup>` : "NC"}</b>${dl ? `<span class="${dl > 0 ? "mieux" : "moins"}">${dl > 0 ? "▲" : "▼"} ${Math.abs(dl)}</span>` : ""}
+            <small>${d.place == null ? "non classé" : d.meilleure ? `meilleure : ${d.meilleure}<sup>e</sup>` : ""}</small></td>
+          <td><b>${signe(d.moy == null ? null : +d.moy)}</b></td><td><b>${signe(d.moy6 == null ? null : +d.moy6)}</b></td>
+          <td><b>${d.nb ?? "—"}</b> / ${d.divisor ?? "—"}</td></tr>`; }).join("")}</tbody></table></div>
+      <div class="meta p-merite-pied">Relevé ${lu ? `le ${fmtDate(String(lu).slice(0, 10))}` : "pas encore fait"} · mis à jour le lendemain de chaque parution du Mérite
         ${Saison.demo ? "" : `· <button type="button" class="lien" id="p-releve">Mettre à jour maintenant</button>`}
         ${Saison.licence?.verif === "ok" ? `· <span title="Licence reconnue dans les résultats : joueur verrouillé">🔒 joueur vérifié par la licence</span>` : `· <button type="button" class="lien" id="p-oublier">Ce n'est pas moi</button>`}</div>
     </div>` : `
@@ -2696,9 +2737,9 @@ function rendreProfil() {
       const bloque = !!lic.num;
       $("p-licence").disabled = bloque;
       $("p-licence-aide").textContent = !lic.num ? "sur ta carte ou l'appli ffgolf · sert à retrouver tes places obtenues (chaque lundi)"
-        : (lic.verif === "ok" ? "✓ reconnue dans tes résultats · " : lic.verif === "nom_different" ? "⚠ cette licence ne correspond pas à ta fiche Mérite · "
-          : lic.verif === "introuvable" ? "pas encore trouvée dans les résultats de ta saison · " : "vérification au prochain passage (lundi) · ")
-          + "non modifiable : pour la corriger, contacte l'administrateur";
+        : (lic.verif === "ok" ? "✓ reconnue dans tes résultats" : lic.verif === "nom_different" ? "⚠ ne correspond pas à ta fiche Mérite"
+          : lic.verif === "introuvable" ? "pas encore trouvée dans tes résultats" : "vérifiée au prochain relevé (lundi)")
+          + " · correction : administrateur";
     }
   }
   $("p-dist-auto").checked = f.distAuto !== false;
@@ -2720,7 +2761,7 @@ function rendreProfil() {
   const idxFfg = [...Object.keys(LISTES_M).map((l) => dernierMerite(l)?.index_golf), m?.index].find((x) => x != null);
   $("p-index").disabled = idxFfg != null;
   if (idxFfg != null) v("p-index", String(idxFfg).replace(".", ","));
-  $("p-index-aide").textContent = idxFfg != null ? "Donnée ffgolf (ta fiche Mérite), mise à jour automatiquement." : "";
+  $("p-index-aide").textContent = idxFfg != null ? "donnée ffgolf, mise à jour automatiquement" : "";
 }
 $("ecran-profil").addEventListener("submit", async (e) => {
   if (e.target.id !== "p-cherche-f") return;
