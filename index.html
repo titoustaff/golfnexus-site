@@ -904,6 +904,11 @@ body.assistant-ouvert { overflow: hidden; }
 .tag.ok-att { background: var(--jaune); color: var(--jaune-texte); }
 .ecran-admin .bloc h3 small { font-weight: 500; font-size: 12px; color: var(--doux); margin-left: 8px; }
 #p-st-nom { width: min(420px, 100%); }
+/* clubs (structures) — 06/11 */
+.ad-st-form { margin-top: 12px; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ad-st-form input, .ad-st-form select { min-width: 180px; }
+.co-club { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 24px; margin: 8px 0; }
+.co-club h4 { margin: 0 0 4px; }
 
 </style>
 </head>
@@ -1124,6 +1129,7 @@ body.assistant-ouvert { overflow: hidden; }
       <p class="a-msg" id="ad-msg" aria-live="polite"></p>
     </form>
     <div class="bloc"><h3>Invitations en attente</h3><div id="ad-invits"></div></div>
+    <div class="bloc"><h3>Clubs <small>structures : un club ffgolf (son académie, les équipes de son AS) ou un coach indépendant</small></h3><div id="ad-structures"></div></div>
     <div class="bloc"><h3>Comptes</h3><div id="ad-membres" class="st-table"></div></div>
   </section>
 
@@ -1281,6 +1287,7 @@ async function charger() {
   const [tournois, golfs, meta] = D ? [D.tournois, D.golfs, D.meta]
     : await Promise.all([J("../data/tournois.json"), J("../data/golfs.json"), J("../reports/derniere_collecte.json")]);
   etat.tournois = tournois || [];
+  etat.clubs = (D && D.clubs) || [];   // référentiel des clubs ffgolf (noms du Mérite, ex. « PIC SAINT-LOUP »)
   etat.parId = new Map(etat.tournois.map((t) => [t.id, t]));
   Saison.chargerLocal();
   for (const g of golfs || []) etat.golfs[g.slug] = g;
@@ -2151,10 +2158,13 @@ const Saison = {
     const L = await sb.from("saisons").select("id,nom,annee").eq("user_id", user.id);
     const ids = (L.data || []).map((l) => l.id);
     const [I, P] = await Promise.all([ids.length ? sb.from("saison_tournois").select("saison_id,tournoi_id,statut,note,ajoute_le").in("saison_id", ids) : { data: [] },
-      sb.from("profils").select("domicile_nom,lat,lon,fiche,licence,licence_le,licence_verif,role,mineur,parent_valide_le,structure_type,structure_nom").eq("id", user.id).maybeSingle()]);
+      sb.from("profils").select("domicile_nom,lat,lon,fiche,licence,licence_le,licence_verif,role,mineur,parent_valide_le,structure_id,club_licence").eq("id", user.id).maybeSingle()]);
     const err = L.error || I.error || P.error; if (err) throw err;
     this.role = P.data?.role || "joueur"; this.mineur = !!P.data?.mineur; this.parentValide = P.data?.parent_valide_le || null;
-    this.structure = { type: P.data?.structure_type || "", nom: P.data?.structure_nom || "" };
+    // structure (06/11) = le club du coach (rattaché par l'admin) : nom, club ffgolf, coach principal, coachs de l'académie
+    this.clubLicence = P.data?.club_licence || null;
+    this.structure = null;
+    if (P.data?.structure_id) { const S = await sb.rpc("ma_structure_detail"); this.structure = (S.data || [])[0] || null; }
     // places obtenues : rangées par la collecte du lundi (pipeline/perso.py), seulement la ligne du joueur
     const RP = await sb.from("resultats_perso").select("tournoi_id,place,classes,inscrits,tours,total,par,serie,lu_le,trous,pars,parcours").eq("user_id", user.id);
     this.resultats = Object.fromEntries((RP.data || []).map((r) => [r.tournoi_id, r]));
@@ -3574,13 +3584,13 @@ async function rendreAcces() {
   const C = coachSeul() ? { data: [] } : await sb.rpc("mes_coachs");
   const lib = { demande: "en attente", accepte: "accès accordé", refuse: "refusé" };
   const coachs = C.data || [];
-  if (!coachSeul()) h += `<div class="bloc p-bloc"><h3>Coachs qui suivent ce joueur</h3>
-    ${coachs.length ? coachs.map((c) => `<div class="acces-ligne"><div class="qui"><b>${esc(c.nom || "")}</b>${c.structure_nom ? ` · <span class="structure">${esc(c.structure_nom)} <i>(${esc(STRUCTURES[c.structure_type] || "")})</i></span>` : ` · <span class="structure">structure non renseignée</span>`}<small>${esc(c.email || "")} · demandé le ${fmtDate(String(c.demande_le).slice(0, 10))}</small></div>
+  if (!coachSeul()) h += `<div class="bloc p-bloc"><h3>Qui te suit</h3>
+    ${coachs.length ? coachs.map((c) => `<div class="acces-ligne"><div class="qui">${c.structure_nom ? `<b>${esc(c.structure_nom)}</b> · ton coach : <b>${esc(c.nom || "")}</b>${c.coachs && c.structure_type !== "independant" ? ` <span class="structure">· académie : ${esc(c.coachs)}</span>` : ""}` : `<b>${esc(c.nom || "")}</b> · <span class="structure">coach</span>`}<small>${esc(c.email || "")} · demandé le ${fmtDate(String(c.demande_le).slice(0, 10))}</small></div>
       <span class="statut-acces ${c.statut}">${lib[c.statut]}</span>
       ${c.statut !== "accepte" ? `<button type="button" class="btn plein" data-acces-ok="${esc(c.coach_id)}">Accepter</button>` : ""}
       ${c.statut === "demande" ? `<button type="button" class="btn" data-acces-non="${esc(c.coach_id)}">Refuser</button>` : ""}
       ${c.statut === "accepte" ? `<button type="button" class="btn" data-acces-fin="${esc(c.coach_id)}">Retirer l'accès</button>` : ""}</div>`).join("")
-      : `<p class="meta">Aucun coach. Un coach demande l'accès avec ta licence ffgolf ; la demande apparaît ici et tu choisis. Un coach accepté voit ta saison et tes stats en lecture seule, sans rien pouvoir modifier.</p>`}
+      : `<p class="meta">Personne pour l'instant. Le coach de ton club (son académie) ou ton coach demande à te suivre : la demande apparaît ici et tu choisis. Si tu acceptes ton club, tous les coachs de son académie voient ta saison et tes stats, en lecture seule ; un coach d'un autre club ne te voit que lui-même.</p>`}
     ${Saison.mineur && !Saison.parentValide && coachs.some((c) => c.statut === "demande") ? `<p class="meta">Valide d'abord le compte (encadré ci-dessus) pour pouvoir accepter un coach.</p>` : ""}</div>`;
   box.innerHTML = h;
 }
@@ -3650,15 +3660,14 @@ async function rendreCoach() {
   const box = $("co-contenu"); if (!box) return;
   if (Saison.role !== "coach" && Saison.role !== "admin") { box.innerHTML = "<div class='bloc vide'>Réservé aux coachs.</div>"; return; }
   // « Ma structure » obligatoire pour un coach (06/11) : tant qu'elle manque, on y ouvre et les autres onglets y renvoient
-  const stOk = !!(Saison.structure?.type && Saison.structure?.nom);
+  const stOk = !!Saison.structure?.id;
   if (!stOk && !co.vuStructure) { co.onglet = "structure"; co.vuStructure = true; }
-  box.innerHTML = `<div class="seg co-onglets" role="group" aria-label="Espace coach">${[["joueurs", "Joueurs"], ["equipes", "Équipes"], ["calendrier", "Calendrier d'équipe"], ["invitations", "Invitations"], ["structure", "Ma structure"]]
-    .map(([k, v]) => `<button type="button" data-co-onglet="${k}" aria-pressed="${co.onglet === k}">${v}${k === "structure" && !stOk ? ' <span class="nb" title="à renseigner">!</span>' : ""}</button>`).join("")}</div><div id="co-corps"><p class="meta">Chargement…</p></div>`;
+  box.innerHTML = `<div class="seg co-onglets" role="group" aria-label="Espace coach">${[["joueurs", "Joueurs"], ["equipes", "Équipes de l'AS"], ["calendrier", "Calendrier d'équipe"], ["invitations", "Invitations"], ["structure", "Mon club"]]
+    .map(([k, v]) => `<button type="button" data-co-onglet="${k}" aria-pressed="${co.onglet === k}">${v}${k === "structure" && !stOk ? ' <span class="nb" title="pas encore rattaché">!</span>' : ""}</button>`).join("")}</div><div id="co-corps"><p class="meta">Chargement…</p></div>`;
   const corps = $("co-corps");
   try {
     if (co.onglet === "structure") corps.innerHTML = htmlStructure();
-    else if (!stOk) corps.innerHTML = `<div class="bloc p-parent"><h3>Renseigne d'abord ta structure</h3><p>Club, ligue, académie, pôle ou coach indépendant : les joueurs et les parents la voient dans chaque invitation et chaque demande d'accès. Elle est obligatoire pour un coach.</p>
-      <p><button type="button" class="btn plein" data-co-onglet="structure">Renseigner ma structure</button></p></div>`;
+    else if (!stOk) corps.innerHTML = `<div class="bloc p-parent"><h3>Tu n'es rattaché à aucun club</h3><p>Un coach travaille dans un club (son académie) ou en indépendant. C'est l'administrateur qui te rattache : demande-lui de le faire. Ensuite, tu verras les joueurs et les équipes de ton club.</p></div>`;
     else corps.innerHTML = co.onglet === "equipes" ? await htmlEquipes() : co.onglet === "calendrier" ? await htmlCalendrierEquipe() : co.onglet === "invitations" ? await htmlInvitations() : await htmlJoueurs();
     if (stOk && co.onglet === "joueurs") majTableJoueurs(); }
   catch (e) { corps.innerHTML = `<div class="bloc vide">Lecture impossible : ${esc(e.message || String(e))}</div>`; }
@@ -3678,7 +3687,7 @@ async function htmlJoueurs() {
   const joueurs = J.data || [], equipes = E.data || [];
   const eqDe = {}; for (const e of equipes) for (const m of e.equipe_joueurs || []) (eqDe[m.joueur_id] ||= []).push(e);
   co.data = { joueurs, equipes, eqDe };
-  co.f ||= { q: "", groupe: "", sexe: "", eq: "", statut: "", tri: "nom" };
+  co.f ||= { q: "", groupe: "", sexe: "", eq: "", statut: "", tri: "nom", type: "" };
   co.sel ||= new Set();
   const st = Saison.structure || {}, f = co.f;
   const opt = (v, l, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`;
@@ -3689,23 +3698,28 @@ async function htmlJoueurs() {
         <select id="co-f-groupe" aria-label="Catégorie">${opt("", "Toutes catégories", f.groupe)}${Object.entries(GROUPES).map(([k, v]) => opt(k, v, f.groupe)).join("")}</select>
         <select id="co-f-sexe" aria-label="Sexe">${opt("", "Tous", f.sexe)}${opt("H", "Messieurs / garçons", f.sexe)}${opt("D", "Dames / filles", f.sexe)}</select>
         <select id="co-f-eq" aria-label="Équipe">${opt("", "Toutes équipes", f.eq)}${opt("-", "Sans équipe", f.eq)}${equipes.map((e) => opt(e.id, e.nom, f.eq)).join("")}</select>
+        <select id="co-f-type" aria-label="Joueurs">${opt("", "Tous mes joueurs", f.type)}${opt("as", "Joueurs AS", f.type)}${opt("hors", "Mes joueurs hors club", f.type)}${opt("moi", "Dont je suis le coach", f.type)}</select>
         <select id="co-f-statut" aria-label="Statut">${opt("", "Tous statuts", f.statut)}${opt("accepte", "Accès accordé", f.statut)}${opt("demande", "En attente", f.statut)}</select>
         <select id="co-f-tri" aria-label="Trier par">${opt("nom", "Tri : nom", f.tri)}${opt("index", "Tri : index", f.tri)}${opt("groupe", "Tri : catégorie", f.tri)}</select>
       </div>
       <div class="co-selbarre" id="co-selbarre"></div>
-      <div class="st-table co-table"><table><thead><tr><th><input type="checkbox" id="co-tout" aria-label="Tout sélectionner"></th><th>Joueur</th><th>Catégorie</th><th>Index</th><th>Équipes</th><th>Statut</th><th></th></tr></thead>
+      <div class="st-table co-table"><table><thead><tr><th><input type="checkbox" id="co-tout" aria-label="Tout sélectionner"></th><th>Joueur</th><th>Catégorie</th><th>Index</th><th>Coach</th><th>Équipes</th><th>Statut</th><th></th></tr></thead>
         <tbody id="co-tbody"></tbody></table></div>
       <div id="co-pied"></div></div>`;
 }
-// ---- onglet « Ma structure » (configuration du coach, obligatoire)
+// ---- onglet « Mon club » (06/11) : la structure du coach, en lecture seule (rattachement par l'administrateur)
 function htmlStructure() {
-  const st = Saison.structure || {}, ok = st.type && st.nom;
-  const opt = (v, l, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`;
-  return `<form class="bloc p-bloc ${ok ? "" : "p-parent"}" id="p-structure"><h3>Ma structure ${ok ? "" : "<small>(obligatoire)</small>"}</h3>
-      <p class="meta">Qui tu représentes : club, ligue, académie, pôle / comité ou coach indépendant. Les joueurs et les parents la voient dans chaque invitation et chaque demande d'accès.</p>
-      <div class="c-form"><select id="p-st-type" aria-label="Type de structure" required><option value="">Type…</option>${Object.entries(STRUCTURES).map(([k, v]) => opt(k, v, st.type)).join("")}</select>
-        <input id="p-st-nom" maxlength="80" required placeholder="ex. Golf de Massane, Ligue Occitanie, Académie…" value="${esc(st.nom || "")}" aria-label="Nom de la structure">
-        <button type="submit" class="btn plein">Enregistrer</button></div></form>`;
+  const st = Saison.structure;
+  if (!st) return `<div class="bloc p-parent"><h3>Mon club</h3><p>Tu n'es rattaché à aucun club pour l'instant. C'est l'administrateur qui rattache un coach à son club (ou le déclare coach indépendant) : demande-lui de le faire.</p></div>`;
+  const club = st.club ? titre(st.club) : null;
+  return `<div class="bloc"><h3>${esc(st.nom)} <small>${st.type === "independant" ? "coach indépendant" : `club ffgolf : ${esc(club)}`}</small></h3>
+    ${st.type === "independant" ? `<p>Tu suis tes joueurs à titre personnel ; pas d'équipes.</p>` : `
+    <div class="co-club">
+      <div><h4>Académie</h4><p>${st.principal ? `Coach principal : <b>${esc(st.principal)}</b><br>` : ""}Coachs : ${esc(st.coachs || "—")}</p>
+        <p class="meta">Les coachs de l'académie voient tous les <b>Joueurs AS</b> (licenciés à ${esc(club)}) et composent les équipes. Les <b>joueurs hors club</b> que tu suis ne sont visibles que par toi.</p></div>
+      <div><h4>AS</h4><p>Les équipes de l'AS (onglet « Équipes de l'AS ») n'accueillent que les licenciés à ${esc(club)}.</p></div>
+    </div>`}
+    <p class="meta">Rattachement, club et coach principal sont gérés par l'administrateur.</p></div>`;
 }
 // ---- onglet « Invitations » (06/11) : inviter (pas encore de compte), demander l'accès (déjà un compte), suivi
 async function htmlInvitations() {
@@ -3755,6 +3769,9 @@ function joueursFiltres() {
   const mots = plier(f.q).trim().split(/\s+/).filter(Boolean);
   const L = joueurs.filter((j) => {
     if (f.statut && j.statut !== f.statut) return false;
+    if (f.type === "as" && !j.du_club) return false;
+    if (f.type === "hors" && j.du_club) return false;
+    if (f.type === "moi" && !j.moi_referent) return false;
     if (f.sexe && j.sexe !== f.sexe) return false;
     if (f.groupe && groupeDe(j) !== f.groupe) return false;
     if (f.eq === "-" && (eqDe[j.joueur_id] || []).length) return false;
@@ -3777,11 +3794,13 @@ function majTableJoueurs() {
       <td>${ok ? `<button type="button" class="s-nom" data-voir="${esc(j.joueur_id)}" title="Voir sa saison">${esc(j.nom || j.libelle || "joueur")}</button>` : `<b>${esc(j.libelle || "Joueur")}</b>`}<small class="co-lic">${esc(j.licence || "")}</small></td>
       <td>${ok ? esc([j.categorie && majMots(j.categorie), j.naissance].filter(Boolean).join(" · ")) : "—"}</td>
       <td>${ok && j.index_golf != null ? String(j.index_golf).replace(".", ",") : "—"}</td>
+      <td>${j.moi_referent ? "<b>toi</b>" : esc(j.referent_nom || "—")}${ok && !j.du_club ? ' <span class="tag" title="licencié dans un autre club : visible seulement par son coach">hors club</span>' : ""}</td>
       <td>${(eqDe[j.joueur_id] || []).map((e) => `<span class="co-mini">${esc(e.nom)}</span>`).join(" ") || (ok ? `<span class="meta">—</span>` : "")}</td>
       <td><span class="statut-acces ${j.statut}">${lib[j.statut]}</span></td>
       <td class="co-td-actions"><span class="co-actions">${ok ? `<button type="button" class="btn" data-voir="${esc(j.joueur_id)}">Saison</button><button type="button" class="btn" data-voir="${esc(j.joueur_id)}" data-cible="stats">Stats</button>` : ""}
+        ${ok && j.du_club && !j.moi_referent ? `<button type="button" class="lien" data-referent="${esc(j.joueur_id)}" title="Tu deviens le coach référent de ce joueur">Devenir son coach</button>` : ""}
         <button type="button" class="lien" data-acces-coach-fin="${esc(j.joueur_id)}">${ok ? "Ne plus suivre" : "Annuler"}</button></span></td></tr>`; }).join("")
-    || `<tr><td colspan="7" class="meta">${(co.data.joueurs || []).length ? "Aucun joueur pour ces critères." : "Aucun joueur : clique sur « + Ajouter des joueurs »."}</td></tr>`;
+    || `<tr><td colspan="8" class="meta">${(co.data.joueurs || []).length ? "Aucun joueur pour ces critères." : "Aucun joueur : onglet « Invitations » pour en inviter ou demander l'accès."}</td></tr>`;
   $("co-pied").innerHTML = `<p class="meta">${L.length} joueur${L.length > 1 ? "s" : ""}${L.length > co.voir ? ` · ${co.voir} affichés <button type="button" class="lien" data-co-plus>Afficher ${Math.min(100, L.length - co.voir)} de plus</button>` : ""}</p>`;
   const tout = $("co-tout"), sel = vus.filter((j) => j.statut === "accepte");
   tout.checked = sel.length > 0 && sel.every((j) => co.sel.has(j.joueur_id));
@@ -3827,7 +3846,9 @@ async function htmlEquipes() {
   }
   const ordre = (n) => { const i = EQUIPES_TYPES.indexOf(n); return i < 0 ? 99 : i; };
   E.data = (E.data || []).sort((a, b) => ordre(a.nom) - ordre(b.nom) || a.nom.localeCompare(b.nom, "fr"));
-  const ok = (J.data || []).filter((j) => j.statut === "accepte"), nomDe = (id) => ok.find((j) => j.joueur_id === id);
+  const tous = (J.data || []).filter((j) => j.statut === "accepte"), nomDe = (id) => tous.find((j) => j.joueur_id === id);
+  // équipes de l'AS : seuls les Joueurs AS (licenciés au club de la structure) peuvent y entrer
+  const club = Saison.structure?.club, ok = club ? tous.filter((j) => j.du_club) : tous;
   // une équipe à la fois : onglets (≤ 8 équipes) ou liste déroulante au-delà ; « + Nouvelle équipe » = création
   const eqs = E.data || [];
   if (co.eqSel !== "nouvelle" && !eqs.some((e) => e.id === co.eqSel)) co.eqSel = eqs[0]?.id || "nouvelle";
@@ -3837,7 +3858,8 @@ async function htmlEquipes() {
        <button type="button" role="tab" class="nouvelle" data-eq-sel="nouvelle" aria-selected="${co.eqSel === "nouvelle"}">+ Nouvelle équipe</button></div>`
     : `<div class="co-eq-onglets"><select id="co-eq-liste" aria-label="Équipe">${eqs.map((e) => `<option value="${esc(e.id)}" ${e.id === co.eqSel ? "selected" : ""}>${esc(e.nom)} (${n(e)})</option>`).join("")}</select>
        <button type="button" role="tab" class="nouvelle" data-eq-sel="nouvelle" aria-selected="${co.eqSel === "nouvelle"}">+ Nouvelle équipe</button></div>`;
-  if (!ok.length) h += `<div class="bloc vide">Aucun joueur suivi pour l'instant : ajoute des joueurs dans l'onglet « Joueurs » (accès accepté), puis range-les ici.</div>`;
+  if (!ok.length) h += `<div class="bloc vide">${club ? `Aucun Joueur AS (licencié à ${esc(titre(club))}) suivi pour l'instant : invite-les ou demande l'accès dans l'onglet « Invitations », puis range-les ici.` : "Aucun joueur suivi pour l'instant : invite-les ou demande l'accès dans l'onglet « Invitations », puis range-les ici."}</div>`;
+  else if (club) h += `<p class="meta">Équipes de l'AS : seuls les licenciés à ${esc(titre(club))} peuvent y entrer ; elles sont partagées par tous les coachs de l'académie.</p>`;
   if (co.eqSel === "nouvelle") return h + `<form class="bloc" id="co-eq-form"><h3>Nouvelle équipe</h3><div class="c-form"><input id="co-eq-nom" maxlength="60" required placeholder="ex. Équipe 2, U14 Garçons, Interclubs" aria-label="Nom de l'équipe">
     <button type="submit" class="btn plein">Créer l'équipe</button></div>
     ${EQUIPES_TYPES.some((x) => !eqs.some((e) => e.nom === x)) ? `<p class="meta">Équipes types manquantes : ${EQUIPES_TYPES.filter((x) => !eqs.some((e) => e.nom === x)).map(esc).join(", ")}.
@@ -3859,7 +3881,7 @@ async function htmlEquipes() {
           return `<h4>Joueurs à ajouter <small>${ok2.length}</small></h4>` + (ok2.length
           ? `<input type="search" class="co-cherche" data-eq-cherche="${esc(e.id)}" placeholder="Rechercher : nom, prénom, licence, catégorie…" aria-label="Rechercher un joueur à ajouter" autocomplete="off">
              <div data-eq-props="${esc(e.id)}">${resultatsAjout(e.id, "")}</div>`
-          : `<p class="meta">Aucun autre de tes joueurs ne correspond à cette équipe (sexe, âge).</p>`); })()}</div>
+          : `<p class="meta">Aucun autre Joueur AS ne correspond à cette équipe (sexe, âge).</p>`); })()}</div>
       </div></div>`;
   }
   return h;
@@ -3903,6 +3925,10 @@ async function htmlCalendrierEquipe() {
 $("co-contenu").addEventListener("click", async (e) => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.coOnglet) { co.onglet = b.dataset.coOnglet; rendreCoach(); return; }
+  if (b.dataset.referent) {
+    const { error } = await sb.rpc("changer_referent", { j: b.dataset.referent });
+    signaler(error ? "Impossible : " + error.message : "Tu es maintenant son coach référent."); rendreCoach(); return;
+  }
   if (b.dataset.reinviterCo) {
     b.disabled = true; const err = await inviter(b.dataset.reinviterCo, b.dataset.mineur ? "mineur" : "joueur", b.dataset.nom, b.dataset.licence); b.disabled = false;
     signaler(err ? "Renvoi impossible : " + err : `Invitation renvoyée à ${b.dataset.reinviterCo} (nouveau lien valable 24 heures).`); return;
@@ -3913,7 +3939,8 @@ $("co-contenu").addEventListener("click", async (e) => {
   if (b.id === "co-sel-ok") {
     const eq = $("co-sel-eq").value, ids = [...co.sel];
     const { error } = await sb.from("equipe_joueurs").upsert(ids.map((j) => ({ equipe_id: eq, joueur_id: j })), { onConflict: "equipe_id,joueur_id", ignoreDuplicates: true });
-    signaler(error ? "Impossible : " + error.message : `${ids.length} joueur${ids.length > 1 ? "s" : ""} ajouté${ids.length > 1 ? "s" : ""} à l'équipe.`);
+    signaler(error ? (/row-level security|policy/i.test(error.message) ? "Impossible : seuls les Joueurs AS (licenciés au club) peuvent entrer dans les équipes de l'AS." : "Impossible : " + error.message)
+      : `${ids.length} joueur${ids.length > 1 ? "s" : ""} ajouté${ids.length > 1 ? "s" : ""} à l'équipe.`);
     if (!error) co.sel.clear();
     rendreCoach(); return;
   }
@@ -4002,11 +4029,28 @@ async function rendreAdmin() {
   $("ad-invits").innerHTML = (I.data || []).length ? (I.data || []).map((i) => `<div class="acces-ligne"><div class="qui"><b>${esc(i.email)}</b><small>${esc(i.nom || "")} · ${roles[i.role]}${i.mineur ? " (moins de 18 ans)" : ""}${i.licence ? " · licence " + esc(i.licence) : ""} · invité le ${fmtDate(String(i.cree_le).slice(0, 10))}</small></div>
     <button type="button" class="btn" data-reinviter="${esc(i.email)}" data-role="${i.mineur ? "mineur" : i.role}" data-nom="${esc(i.nom || "")}" data-licence="${esc(i.licence || "")}">Renvoyer</button></div>`).join("") : "<p class='meta'>Aucune invitation en attente.</p>";
   if (M.error) { $("ad-membres").innerHTML = `<p class="meta">${esc(M.error.message)}</p>`; return; }
-  $("ad-membres").innerHTML = `<table><thead><tr><th>Compte</th><th>Nom</th><th>Rôle</th><th>Moins de 18 ans</th><th>Licence</th><th>Parent validé</th><th>Dernière connexion</th></tr></thead><tbody>
+  // clubs (06/11) : créer / modifier une structure, choisir son coach principal ; rattacher les coachs (colonne « Club »)
+  const S = await sb.from("structures").select("id,type,nom,club,coach_principal").order("nom"), structs = S.data || [];
+  const coachsDe = (sid) => (M.data || []).filter((m) => m.structure_id === sid);
+  const ed = ad.edition ? structs.find((x) => x.id === ad.edition) : null;
+  $("ad-structures").innerHTML = `${structs.length ? `<div class="st-table"><table><thead><tr><th>Nom</th><th>Club ffgolf</th><th>Coach principal</th><th>Coachs (académie)</th><th></th></tr></thead><tbody>
+    ${structs.map((x) => `<tr><td><b>${esc(x.nom)}</b>${x.type === "independant" ? ' <span class="tag">indépendant</span>' : ""}</td><td>${x.club ? esc(titre(x.club)) : "—"}</td>
+      <td>${esc((coachsDe(x.id).find((m) => m.id === x.coach_principal) || {}).nom || "—")}</td><td>${coachsDe(x.id).map((m) => esc(m.nom || m.email)).join(", ") || "—"}</td>
+      <td><button type="button" class="lien" data-ad-edit="${esc(x.id)}">Modifier</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="meta">Aucun club pour l'instant.</p>`}
+    <form id="ad-st-form" class="c-form ad-st-form" autocomplete="off"><b>${ed ? "Modifier « " + esc(ed.nom) + " »" : "Nouveau club"}</b>
+      <select id="ad-st-type" aria-label="Type"><option value="club" ${ed?.type !== "independant" ? "selected" : ""}>Club (académie + AS)</option><option value="independant" ${ed?.type === "independant" ? "selected" : ""}>Coach indépendant</option></select>
+      <input id="ad-st-nom" required maxlength="80" placeholder="Nom affiché (ex. Pic Saint-Loup)" value="${esc(ed?.nom || "")}" aria-label="Nom">
+      <input id="ad-st-club" list="ad-clubs-liste" placeholder="Club ffgolf (liste du Mérite)" value="${esc(ed?.club || "")}" aria-label="Club ffgolf">
+      <datalist id="ad-clubs-liste">${(etat.clubs || []).map((c) => `<option value="${esc(c.nom)}">`).join("")}</datalist>
+      ${ed ? `<select id="ad-st-principal" aria-label="Coach principal"><option value="">Coach principal…</option>${coachsDe(ed.id).map((m) => `<option value="${esc(m.id)}" ${m.id === ed.coach_principal ? "selected" : ""}>${esc(m.nom || m.email)}</option>`).join("")}</select>` : ""}
+      <button type="submit" class="btn plein">${ed ? "Enregistrer" : "Créer le club"}</button>${ed ? ' <button type="button" class="lien" data-ad-edit="">Annuler</button>' : ""}</form>
+    <p class="meta">Le club ffgolf s'écrit comme dans le Mérite (ex. « PIC SAINT-LOUP ») : c'est lui qui reconnaît les Joueurs AS (club de licence).</p>`;
+  ad.structs = structs;
+  $("ad-membres").innerHTML = `<table><thead><tr><th>Compte</th><th>Nom</th><th>Rôle</th><th>Moins de 18 ans</th><th>Licence</th><th>Club (coach)</th><th>Parent validé</th><th>Dernière connexion</th></tr></thead><tbody>
     ${(M.data || []).map((m) => `<tr><td>${esc(m.email)}</td><td>${esc(m.nom || "")}</td>
       <td><select class="ad-role" data-membre="${esc(m.id)}">${Object.entries(roles).map(([k, v]) => `<option value="${k}" ${k === m.role ? "selected" : ""}>${v}</option>`).join("")}</select></td>
       <td><input type="checkbox" class="ad-mineur" data-membre="${esc(m.id)}" ${m.mineur ? "checked" : ""}></td>
-      <td>${esc(m.licence || "—")} <button type="button" class="lien" data-corriger-lic="${esc(m.id)}" data-lic="${esc(m.licence || "")}" data-email="${esc(m.email)}">corriger</button></td><td>${m.mineur ? (m.parent_valide_le ? "✓ " + fmtDate(String(m.parent_valide_le).slice(0, 10)) : "en attente") : "—"}</td>
+      <td>${esc(m.licence || "—")} <button type="button" class="lien" data-corriger-lic="${esc(m.id)}" data-lic="${esc(m.licence || "")}" data-email="${esc(m.email)}">corriger</button></td><td>${m.role !== "joueur" ? `<select data-rattacher="${esc(m.id)}" aria-label="Club du coach"><option value="">—</option>${structs.map((x) => `<option value="${esc(x.id)}" ${x.id === m.structure_id ? "selected" : ""}>${esc(x.nom)}</option>`).join("")}</select>` : (m.club_licence ? `<span class="meta">licence : ${esc(titre(m.club_licence))}</span>` : "")}</td><td>${m.mineur ? (m.parent_valide_le ? "✓ " + fmtDate(String(m.parent_valide_le).slice(0, 10)) : "en attente") : "—"}</td>
       <td>${m.derniere_connexion ? fmtDate(String(m.derniere_connexion).slice(0, 10)) : "jamais"}</td></tr>`).join("")}</tbody></table>`;
 }
 // licence : obligatoire pour un joueur (06/11), fixée à l'invitation, non modifiable par le joueur
@@ -4024,7 +4068,17 @@ $("ad-form").addEventListener("submit", async (e) => {
   if (err) { m.textContent = "Invitation impossible : " + err; m.classList.add("erreur"); return; }
   m.textContent = `Invitation envoyée à ${$("ad-email").value.trim()}.`; $("ad-form").reset(); rendreAdmin();
 });
+const ad = { edition: null, structs: [] };
+$("ecran-admin").addEventListener("submit", async (e) => {
+  if (e.target.id !== "ad-st-form") return;
+  e.preventDefault();
+  const { error } = await sb.rpc("admin_structure", { sid: ad.edition || null, t: $("ad-st-type").value, n: $("ad-st-nom").value.trim(),
+    c: $("ad-st-club").value.trim(), principal: $("ad-st-principal")?.value || null });
+  signaler(error ? (/structures_club|duplicate/i.test(error.message) ? "Ce club ffgolf a déjà sa structure." : "Enregistrement impossible : " + error.message) : "Club enregistré.");
+  if (!error) ad.edition = null; rendreAdmin();
+});
 $("ecran-admin").addEventListener("click", async (e) => {
+  const ed = e.target.closest("[data-ad-edit]"); if (ed) { ad.edition = ed.dataset.adEdit || null; rendreAdmin(); return; }
   const c = e.target.closest("[data-corriger-lic]");
   if (c) {   // licence fixée : seul l'administrateur la corrige
     const n = prompt(`Nouvelle licence pour ${c.dataset.email} (vide = aucune) :`, c.dataset.lic || ""); if (n == null) return;
@@ -4038,6 +4092,11 @@ $("ecran-admin").addEventListener("click", async (e) => {
   signaler(err ? "Renvoi impossible : " + err : "Invitation renvoyée.");
 });
 $("ecran-admin").addEventListener("change", async (e) => {
+  if (e.target.dataset.rattacher !== undefined) {
+    const { error } = await sb.rpc("admin_rattacher", { uid: e.target.dataset.rattacher, sid: e.target.value || null });
+    signaler(error ? "Rattachement impossible : " + error.message : e.target.value ? "Coach rattaché au club." : "Coach détaché de son club (ses Joueurs AS restent au club).");
+    rendreAdmin(); return;
+  }
   const id = e.target.dataset.membre; if (!id) return;
   const ligne = e.target.closest("tr"), role = ligne.querySelector(".ad-role").value, mineur = ligne.querySelector(".ad-mineur").checked;
   const { error } = await sb.rpc("admin_role", { uid: id, r: role, m: mineur });
@@ -4080,7 +4139,7 @@ function etapesAccueil() {
   const E = [];
   if (Saison.mineur) E.push({ ok: !!Saison.parentValide, t: "Valide le compte en tant que parent", d: "obligatoire pour un joueur de moins de 18 ans", go: "profil" });
   if (coach) {
-    E.push({ ok: !!(Saison.structure?.type && Saison.structure?.nom), t: "Indique ta structure", d: "club, ligue, académie : les joueurs doivent savoir qui tu es", go: "coach" });
+    E.push({ ok: !!Saison.structure?.id, t: "Être rattaché à ton club", d: "c'est l'administrateur qui te rattache à ton club (ou te déclare coach indépendant)", go: "coach" });
     E.push({ ok: (Saison.joueurs || []).length > 0, t: "Ajoute tes premiers joueurs", d: "par leur licence, ou invite-les par e-mail", go: "coach" });
   }
   if (!coachSeul()) {
@@ -4122,7 +4181,6 @@ function etapesAssistant() {
   const f = Saison.fiche || {}, E = [];
   if (etat.demandeMdp && !f.mdpChoisi) E.push("mdp");
   if (Saison.mineur && !Saison.parentValide) E.push("parent");
-  if (Saison.role === "coach" && !(Saison.structure?.type && Saison.structure?.nom)) E.push("structure");
   if (!coachSeul() && !f.merite && !f.pasMerite) E.push("merite");
   if (!f.assistantFait) {
     if (!coachSeul() && !Saison.licence?.num) E.push("licence");
