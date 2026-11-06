@@ -533,7 +533,8 @@ details.autres summary { cursor: pointer; color: var(--vert-2); font-size: 12px;
 .st-bloc h4 { margin: 4px 0 6px; font-size: 13.5px; color: var(--texte); } .st-bloc h4 small { font-weight: 400; color: var(--doux); }
 .st-multi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 22px; }
 .st-duo { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 22px; margin-top: 8px; }
-.st-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.st-svg { width: 100%; max-width: max-content; height: auto; display: block; overflow: visible; }
+.st-options { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 2px 0 10px; }
 .st-grille { stroke: var(--st-grille); stroke-width: 1; } .st-grille.zero { stroke: var(--doux); stroke-opacity: .5; }
 .st-axe { font-size: 11px; fill: var(--doux); } .st-val { font-size: 11.5px; font-weight: 600; fill: var(--texte); }
 .st-l { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -3030,9 +3031,11 @@ function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero 
   const X = (i) => g + (n === 1 ? (W - g - d) / 2 : (i * (W - g - d)) / (n - 1));
   const Y = (v) => { const r = (v - lo) / (hi - lo || 1); return hautM + (inverse ? r : 1 - r) * (h - hautM - basM); };
   const pasX = Math.max(1, Math.ceil(n / Math.max(4, Math.floor(W / 90))));
-  let o = `<svg class="st-svg" viewBox="0 0 ${W} ${h}" role="img">`;
+  let o = `<svg class="st-svg" viewBox="0 0 ${W} ${h}" width="${W}" height="${h}" role="img">`;
   for (const v of t) o += `<line class="st-grille" x1="${g}" x2="${W - d}" y1="${Y(v)}" y2="${Y(v)}"/><text class="st-axe" x="${g - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
-  xs.forEach((x, i) => { if ((i % pasX === 0 && n - 1 - i >= pasX / 2) || i === n - 1) o += `<text class="st-axe" x="${X(i)}" y="${h - 8}" text-anchor="middle">${esc(x)}</text>`; });
+  // étiquettes de l'axe : une sur pasX, jamais deux fois le même mois de suite
+  let dernierLib = null;
+  xs.forEach((x, i) => { if (((i % pasX === 0 && n - 1 - i >= pasX / 2) || i === n - 1) && x !== dernierLib) { o += `<text class="st-axe" x="${X(i)}" y="${h - 8}" text-anchor="middle">${esc(x)}</text>`; dernierLib = x; } });
   // étiquettes de fin de courbe : placées ensemble, au moins 13 px d'écart (sinon « +6,3 12 m » et « 6 m » se chevauchent)
   const finY = new Map(), fins = series.filter((s) => !s.points).map((s) => { const q = s.pts.map((p, i) => (p.y == null ? null : Y(p.y))).filter((v) => v != null).at(-1); return { s, y: q }; })
     .filter((f) => f.y != null).sort((a, b) => a.y - b.y);
@@ -3062,7 +3065,7 @@ function svgColonnes({ barres, fmt = (v) => fx(v), h = 170, W = 1040 }) {
   if (!vs.length) return "";
   const t = graduations(Math.min(0, ...vs), Math.max(0, ...vs)), lo = t[0], hi = t.at(-1);
   const Y = (v) => hautM + (1 - (v - lo) / (hi - lo || 1)) * (h - hautM - basM), bande = (W - g - 8) / n, larg = Math.min(24, bande * 0.6);
-  let o = `<svg class="st-svg" viewBox="0 0 ${W} ${h}" role="img">`;
+  let o = `<svg class="st-svg" viewBox="0 0 ${W} ${h}" width="${W}" height="${h}" role="img">`;
   for (const v of t) o += `<line class="st-grille${v === 0 ? " zero" : ""}" x1="${g}" x2="${W - 8}" y1="${Y(v)}" y2="${Y(v)}"/><text class="st-axe" x="${g - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
   barres.forEach((b, i) => {
     const cx = g + bande * i + bande / 2;
@@ -3178,17 +3181,33 @@ function rendreStats() {
 
   // 2. niveau réel tour par tour
   if (tours.length) {
-    const fen = 5, glis = tours.map((x, i) => moyenne(tours.slice(Math.max(0, i - fen + 1), i + 1).map((y) => y.d)));
+    // interrupteurs (06/11) : « Chaque tour » (sinon UN point par tournoi = moyenne de ses tours, plus lisible)
+    // et « Tout l'historique » (sinon 12 mois, comme le reste de Mes stats)
+    const T_ = st.toutHisto ? tours : tours12, xl = (d) => moisLib(d.slice(0, 4) + d.slice(5, 7));
+    const fen = 5, glis = T_.map((x, i) => moyenne(T_.slice(Math.max(0, i - fen + 1), i + 1).map((y) => y.d)));
+    let ptsPoints, ptsCourbe;
+    if (st.chaqueTour) {
+      ptsPoints = T_.map((x) => ({ x: xl(x.date), y: +x.d.toFixed(1), tip: `${x.score} (${sg(x.d)}), tour ${x.n} de « ${esc(titre(x.nom))} »${x.src === "repère" ? " · SSS du repère (absent du Mérite)" : ""}` }));
+      ptsCourbe = T_.map((x, i) => ({ x: xl(x.date), y: +glis[i].toFixed(2), tip: sg(glis[i]) }));
+    } else {
+      const grp = [];
+      T_.forEach((x, i) => { const k = x.date + "|" + x.nom; let g = grp.at(-1); if (!g || g.k !== k) grp.push((g = { k, date: x.date, nom: x.nom, ds: [], sc: [] })); g.ds.push(x.d); g.sc.push(x.score); g.der = i; });
+      ptsPoints = grp.map((g) => ({ x: xl(g.date), y: +moyenne(g.ds).toFixed(1), tip: `« ${esc(titre(g.nom))} » : ${g.sc.join(" · ")} — ${sg(moyenne(g.ds))} par tour en moyenne` }));
+      ptsCourbe = grp.map((g) => ({ x: xl(g.date), y: +glis[g.der].toFixed(2), tip: sg(glis[g.der]) }));
+    }
     const parN = [1, 2, 3, 4].map((n) => ({ n, v: moyenne(tours12.filter((x) => x.n === n).map((x) => x.d)), c: tours12.filter((x) => x.n === n).length })).filter((x) => x.c);
     const meil = tours12.length ? tours12.reduce((a, b) => (b.d < a.d ? b : a)) : null, pire = tours12.length ? tours12.reduce((a, b) => (b.d > a.d ? b : a)) : null;
-    h += blocSt("Ton niveau tour par tour", "Score de chaque tour par rapport au SSS du parcours (moins = mieux) ; la courbe suit la moyenne des 5 derniers tours.", `
-      <div class="st-legende"><span><i class="c1"></i>moyenne des 5 derniers tours</span><span><i class="pt c2"></i>chaque tour</span></div>
+    const opt = (k, lib) => `<label class="bascule petite"><input type="checkbox" data-st-opt="${k}" ${st[k] ? "checked" : ""}><span class="piste" aria-hidden="true"></span>${lib}</label>`;
+    h += blocSt("Ton niveau tour par tour", `Score par rapport au SSS du parcours (moins = mieux) ; la courbe suit la moyenne des 5 derniers tours · ${st.toutHisto ? "tout l'historique" : "12 derniers mois"}.`, `
+      <div class="st-options">${opt("chaqueTour", "Chaque tour")}${opt("toutHisto", "Tout l'historique")}</div>
+      ${T_.length ? `<div class="st-legende"><span><i class="c1"></i>moyenne des 5 derniers tours</span><span><i class="pt c2"></i>${st.chaqueTour ? "chaque tour" : "chaque tournoi (moyenne de ses tours)"}</span></div>
       ${svgLignes({ series: [
-        { nom: "Tour", cls: "c2", points: true, pts: tours.map((x) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +x.d.toFixed(1), tip: `${x.score} (${sg(x.d)}), tour ${x.n} de « ${esc(titre(x.nom))} »${x.src === "repère" ? " · SSS du repère (absent du Mérite)" : ""}` })) },
-        { nom: "Moyenne 5 tours", cls: "c1", pts: tours.map((x, i) => ({ x: moisLib(x.date.slice(0, 4) + x.date.slice(5, 7)), y: +glis[i].toFixed(2), tip: sg(glis[i]) })) }],
+        { nom: st.chaqueTour ? "Tour" : "Tournoi", cls: "c2", points: true, pts: ptsPoints },
+        { nom: "Moyenne 5 tours", cls: "c1", pts: ptsCourbe }],
         fmt: (v) => sg(v), zero: true, h: 240, W: st.l1,
         // l'axe descend au moins à −5 (et jusqu'à −12 au plus) : les tours sous le SSS doivent se voir
-        plancher: Math.max(-12, Math.min(-5, Math.floor(Math.min(...tours.map((x) => x.d))) - 1)) })}
+        plancher: Math.max(-12, Math.min(-5, Math.floor(Math.min(...ptsPoints.map((x) => x.y))) - 1)) })}`
+      : `<p class="meta">Aucun tour relevé sur les 12 derniers mois : active « Tout l'historique ».</p>`}
       <div class="st-duo">
         <div><h4>Selon le tour de l'épreuve <small>(12 mois)</small></h4>
           ${svgColonnes({ barres: parN.map((x) => ({ lib: `Tour ${x.n}`, v: +x.v.toFixed(2), cls: "c1", tip: `<b>Tour ${x.n}</b><br>${sg(x.v, 2)} vs SSS en moyenne<br>${x.c} tours` })), fmt: (v) => sg(v), h: 160, W: st.l2 })}
@@ -3384,6 +3403,7 @@ async function simulation(der) {
       <p class="meta">Repères : tes tournois ont rapporté de ${fx(pts.at(-1) ?? 0, 1)} à ${fx(pts[0] ?? 0, 1)} points (médiane ${fx(pts[Math.floor(pts.length / 2)] ?? 0, 1)}). Les points dépendent de la place et de la catégorie du tournoi. Estimation : les autres joueurs marquent aussi des points d'ici le prochain Mérite.</p>`);
   } catch { box.innerHTML = blocSt("Ce qu'il te faut pour monter", "", `<p class="meta">Mérite du mois illisible pour l'instant (hors ligne ?).</p>`); }
 }
+$("st-contenu").addEventListener("change", (e) => { const k = e.target.dataset?.stOpt; if (k) { st[k] = e.target.checked; rendreStats(); } });
 $("st-listes").addEventListener("click", (e) => { const b = e.target.closest("[data-st-circuit]"); if (b) { st.circuit = b.dataset.stCircuit; rendreStats(); } });
 // info-bulle des graphiques
 {
