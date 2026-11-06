@@ -2974,6 +2974,12 @@ function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero 
   let o = `<svg class="st-svg" viewBox="0 0 ${W} ${h}" role="img">`;
   for (const v of t) o += `<line class="st-grille" x1="${g}" x2="${W - d}" y1="${Y(v)}" y2="${Y(v)}"/><text class="st-axe" x="${g - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
   xs.forEach((x, i) => { if ((i % pasX === 0 && n - 1 - i >= pasX / 2) || i === n - 1) o += `<text class="st-axe" x="${X(i)}" y="${h - 8}" text-anchor="middle">${esc(x)}</text>`; });
+  // étiquettes de fin de courbe : placées ensemble, au moins 13 px d'écart (sinon « +6,3 12 m » et « 6 m » se chevauchent)
+  const finY = new Map(), fins = series.filter((s) => !s.points).map((s) => { const q = s.pts.map((p, i) => (p.y == null ? null : Y(p.y))).filter((v) => v != null).at(-1); return { s, y: q }; })
+    .filter((f) => f.y != null).sort((a, b) => a.y - b.y);
+  fins.forEach((f, i) => { f.ty = i && f.y - fins[i - 1].ty < 13 ? fins[i - 1].ty + 13 : f.y; });
+  const deb = fins.length ? Math.max(0, fins.at(-1).ty - (h - basM)) : 0;   // tout remonter si on sort du cadre
+  for (const f of fins) finY.set(f.s, f.ty - deb);
   for (const s of series) {
     const pts = s.pts.map((p, i) => (p.y == null ? null : [X(i), Y(p.y), p])).filter(Boolean);
     if (!pts.length) continue;
@@ -2981,8 +2987,7 @@ function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero 
     o += `<path class="st-l ${s.cls}" d="${pts.map((q, i) => (i ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1)).join(" ")}"/>`;
     for (const [x, y] of pts) o += `<circle class="st-pt ${s.cls}" cx="${x}" cy="${y}" r="3"/>`;
     const [lx, ly, lp] = pts.at(-1);
-    o += `<circle class="st-fin ${s.cls}" cx="${lx}" cy="${ly}" r="4.5"/><text class="st-val" x="${lx + 9}" y="${ly + 4 + (series.length > 1 ? (s.cls === "c1" ? -7 : 7) * (Math.abs(ly - (series.find((z) => z !== s)?.lastY ?? -99)) < 14 ? 1 : 0) : 0)}">${fmt(lp.y)}${series.length > 1 ? " " + esc(s.court || "") : ""}</text>`;
-    s.lastY = ly;
+    o += `<circle class="st-fin ${s.cls}" cx="${lx}" cy="${ly}" r="4.5"/><text class="st-val" x="${lx + 9}" y="${(finY.get(s) ?? ly) + 4}">${fmt(lp.y)}${series.length > 1 ? " " + esc(s.court || "") : ""}</text>`;
   }
   // zones de survol (une par mois, toutes séries)
   xs.forEach((x, i) => {
