@@ -839,7 +839,7 @@ body.assistant-ouvert { overflow: hidden; }
 
 /* Carte de score d'un tournoi (Mes stats → Tous les tournois comptés) — 06/11 */
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.st-col-carte { width: 34px; padding-right: 0 !important; }
+.st-col-carte { width: 40px; text-align: right !important; }
 .st-carte-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--bord); background: var(--carte); color: var(--doux); cursor: pointer; }
 .st-carte-btn.detail { color: var(--vert); border-color: var(--vert-2); background: var(--sauge-pale); }
 .st-carte-btn:hover, .st-carte-btn:focus-visible { color: #fff; background: var(--vert-2); border-color: var(--vert-2); outline: none; }
@@ -895,7 +895,6 @@ body.assistant-ouvert { overflow: hidden; }
 .fiche h3 small { font-weight: 500; margin-left: 6px; }
 @media (max-width: 640px) { .cs-comptes { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } }
 .st-tours { white-space: nowrap; }
-.st-tours .st-carte-btn { width: 24px; height: 24px; margin-left: 6px; vertical-align: middle; }
 
 </style>
 </head>
@@ -3266,9 +3265,9 @@ function rendreStats() {
 
   // tableau (vue tableau des données)
   if (T.length) h += blocSt("Tous les tournois comptés", `${T.length} tournois du ${LIBM} (ffgolf garde environ 12 mois glissants ; GolfNexus les conserve).${noteM}`, `
-    <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Circuit · catégorie</th><th title="Catégorie Mérite du tournoi (0 à 10) : force du champ, calculée par la ffgolf">Cat. Mérite</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
-    ${(st.lignesT = T.slice().reverse()).map((t, i) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? `<span class="tag circ-${circuitDe(x)}">${esc(circuitLib(x))}</span>` : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td class="st-tours">${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}${t.tours?.length ? ` <button type="button" class="st-carte-btn${scoreDe(t)?.trous ? " detail" : ""}" data-carte="${i}"
-      title="${scoreDe(t)?.trous ? "Ma carte de score : trou par trou et tour par tour" : "Mes tours sur ce tournoi"}" aria-label="Voir mes scores : ${esc(titre(t.nom))}">${ICONE_CARTE}</button>` : ""}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
+    <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Circuit · catégorie</th><th title="Catégorie Mérite du tournoi (0 à 10) : force du champ, calculée par la ffgolf">Cat. Mérite</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th><th class="st-col-carte"><span class="sr">Carte de score</span></th></tr></thead><tbody>
+    ${(st.lignesT = T.slice().reverse()).map((t, i) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? `<span class="tag circ-${circuitDe(x)}">${esc(circuitLib(x))}</span>` : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td class="st-tours">${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td><td class="st-col-carte">${t.tours?.length ? `<button type="button" class="st-carte-btn${scoreDe(t)?.trous ? " detail" : ""}" data-carte="${i}"
+      title="${scoreDe(t)?.trous ? "Ma carte de score : trou par trou et tour par tour" : "Mes tours sur ce tournoi"}" aria-label="Voir mes scores : ${esc(titre(t.nom))}">${ICONE_CARTE}</button>` : ""}</td></tr>`).join("")}
     </tbody></table></div>`);
   // mise à jour à la demande (relevé immédiat, 1 fois par jour) ; dernière lecture du Mérite
   if (!Saison.demo) h += `<p class="meta st-maj">${der ? `Dernier relevé du ${LIBM} : ${moisLib(der.mois)}` : "Relevé"}${der?.lu_le ? ` (lu le ${fmtDate(String(der.lu_le).slice(0, 10))})` : ""}.
