@@ -564,7 +564,7 @@ details.autres summary { cursor: pointer; color: var(--vert-2); font-size: 12px;
 .b-demo { cursor: default; gap: 6px; } .b-demo small { opacity: .75; font-weight: 500; }
 
 /* ---------------------------------------------------------------- Accueil (connexion obligatoire) */
-body.verrou > :not(#accueil):not(#toast):not(script) { display: none !important; }
+body.verrou > :not(#accueil):not(#toast):not(#rgpd):not(script) { display: none !important; }   /* #rgpd : lisible avant connexion */
 body:not(.verrou) #accueil { display: none; }
 .accueil { position: fixed; inset: 0; overflow-y: auto; z-index: 3000; display: flex; flex-direction: column; background: linear-gradient(160deg, #14532d 0%, #1f7a45 55%, #2f8a55 100%); color: #f4f7f2; }
 .a-haut { flex: 1; max-width: 1100px; width: 100%; margin: 0 auto; padding: 28px 20px 20px; box-sizing: border-box; }
@@ -941,6 +941,7 @@ body.assistant-ouvert { overflow: hidden; }
 .rgpd-t td { overflow-wrap: anywhere; }
 @media (max-width: 560px) { .rgpd-t { font-size: 12px; } .rgpd-t th, .rgpd-t td { padding: 5px 4px; } }
 .rgpd .rgpd-t th, .rgpd .rgpd-t td { white-space: normal !important; }
+/* la page RGPD doit rester lisible avant la connexion (le verrou masque tout le reste) */
 
 </style>
 </head>
@@ -2125,6 +2126,8 @@ function blocResultat(e, ep) {
 
 $("fiche-fermer").addEventListener("click", () => { $("fiche").hidden = true; fermerBulles(); });
 // page « Tes données personnelles » (RGPD, 06/11) : lisible avant même de se connecter (par-dessus l'accueil)
+// placée directement sous <body> : dans un conteneur, elle restait DERRIÈRE l'écran de connexion (z-index du parent)
+document.body.appendChild($("rgpd"));
 const ouvrirRgpd = (oui = true) => { $("rgpd").hidden = !oui; if (oui) $("rgpd-fermer").focus(); };
 document.addEventListener("click", (e) => { if (e.target.closest("[data-rgpd]")) ouvrirRgpd(); else if (e.target.id === "rgpd" || e.target.id === "rgpd-fermer") ouvrirRgpd(false); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("rgpd").hidden) ouvrirRgpd(false); });
