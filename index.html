@@ -909,6 +909,25 @@ body.assistant-ouvert { overflow: hidden; }
 .ad-st-form input, .ad-st-form select { min-width: 180px; }
 .co-club { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 24px; margin: 8px 0; }
 .co-club h4 { margin: 0 0 4px; }
+/* petits écrans (06/11, retour utilisateur « pas responsive ») : les menus passent à la ligne au lieu de défiler
+   sans qu'on le devine ; la liste des équipes devient une liste déroulante */
+.co-eq-mobile { display: none; }
+@media (max-width: 860px) {
+  .bandeau-in .vues { overflow-x: visible; flex-wrap: wrap; justify-content: center; border-radius: 16px; }
+  .bandeau-in .vues button { flex: 1 1 auto; justify-content: center; }
+}
+@media (max-width: 760px) {
+  .co-onglets { display: flex; flex-wrap: wrap; overflow: visible; border-radius: 12px; }
+  .co-onglets button { flex: 1 1 auto; white-space: nowrap; }
+  .co-eq-onglets.co-eq-pastilles { display: none; }
+  .co-eq-onglets.co-eq-mobile { display: flex; }
+  .co-eq-mobile select { width: 100%; min-width: 0; }
+}
+/* bandeau : la grille ne s'élargit plus pour les onglets → ils passent à la ligne */
+@media (max-width: 860px) {
+  .bandeau-in { grid-template-columns: minmax(0, 1fr) auto; }
+  .bandeau-in .vues { min-width: 0; max-width: 100%; }
+}
 
 </style>
 </head>
@@ -3818,6 +3837,15 @@ async function equipesTypes(existantes = []) {
   if (manquent.length) { const { error } = await sb.from("equipes").insert(manquent.map((nom) => ({ nom }))); if (error) throw error; }
 }
 // joueurs qui correspondent à l'équipe d'après son nom (sexe : Messieurs/Garçons, Dames/Filles ; âge : U12/U14/U16, Mid-Am 25+, Seniors 50+)
+// catégorie de tournois d'une équipe, déduite de son nom (06/11) : « Équipe 1 Messieurs » → Adultes + hommes,
+// « U16 Filles » → Jeunes + filles, « Mid-Am Dames » → Mid-Amateurs + femmes, « Seniors… » → Seniors ; sinon tout
+function tournoisEquipe(nom) {
+  const n = plier(nom || "");
+  const circuit = /\bu1\d|\bu\d\b|garcons|filles|jeunes|benjamin|minime|poussin/.test(n) ? "jeunes" : /mid/.test(n) ? "mid" : /senior/.test(n) ? "seniors"
+    : /equipe|messieurs|dames|hommes|femmes|adulte/.test(n) ? "gp" : null;
+  const sexe = /messieurs|garcons|hommes/.test(n) ? "H" : /dames|filles|femmes/.test(n) ? "D" : null;
+  return { circuit, sexe, ok: (t) => (!circuit || circuitDe(t) === circuit) && (!sexe || (sexe === "H" ? t.sexe !== "Femme" : t.sexe !== "Homme")) };
+}
 function correspondEquipe(nom, j) {
   const n = plier(nom), an = new Date().getFullYear(), age = j.naissance ? an - j.naissance : null;
   if (/messieurs|garcons|hommes/.test(n) && j.sexe === "D") return false;
@@ -3854,8 +3882,10 @@ async function htmlEquipes() {
   if (co.eqSel !== "nouvelle" && !eqs.some((e) => e.id === co.eqSel)) co.eqSel = eqs[0]?.id || "nouvelle";
   const n = (e) => (e.equipe_joueurs || []).length;
   let h = eqs.length <= 8
-    ? `<div class="co-eq-onglets" role="tablist">${eqs.map((e) => `<button type="button" role="tab" data-eq-sel="${esc(e.id)}" aria-selected="${e.id === co.eqSel}">${esc(e.nom)} <small>${n(e)}</small></button>`).join("")}
-       <button type="button" role="tab" class="nouvelle" data-eq-sel="nouvelle" aria-selected="${co.eqSel === "nouvelle"}">+ Nouvelle équipe</button></div>`
+    ? `<div class="co-eq-onglets co-eq-pastilles" role="tablist">${eqs.map((e) => `<button type="button" role="tab" data-eq-sel="${esc(e.id)}" aria-selected="${e.id === co.eqSel}">${esc(e.nom)} <small>${n(e)}</small></button>`).join("")}
+       <button type="button" role="tab" class="nouvelle" data-eq-sel="nouvelle" aria-selected="${co.eqSel === "nouvelle"}">+ Nouvelle équipe</button></div>
+       <div class="co-eq-onglets co-eq-mobile"><select id="co-eq-liste" aria-label="Équipe">${eqs.map((e) => `<option value="${esc(e.id)}" ${e.id === co.eqSel ? "selected" : ""}>${esc(e.nom)} (${n(e)})</option>`).join("")}
+         <option value="nouvelle" ${co.eqSel === "nouvelle" ? "selected" : ""}>+ Nouvelle équipe</option></select></div>`
     : `<div class="co-eq-onglets"><select id="co-eq-liste" aria-label="Équipe">${eqs.map((e) => `<option value="${esc(e.id)}" ${e.id === co.eqSel ? "selected" : ""}>${esc(e.nom)} (${n(e)})</option>`).join("")}</select>
        <button type="button" role="tab" class="nouvelle" data-eq-sel="nouvelle" aria-selected="${co.eqSel === "nouvelle"}">+ Nouvelle équipe</button></div>`;
   if (!ok.length) h += `<div class="bloc vide">${club ? `Aucun Joueur AS (licencié à ${esc(titre(club))}) suivi pour l'instant : invite-les ou demande l'accès dans l'onglet « Invitations », puis range-les ici.` : "Aucun joueur suivi pour l'instant : invite-les ou demande l'accès dans l'onglet « Invitations », puis range-les ici."}</div>`;
@@ -3894,9 +3924,14 @@ async function htmlCalendrierEquipe() {
   const ids = eq ? (eq.equipe_joueurs || []).map((m) => m.joueur_id) : ok.map((j) => j.joueur_id);
   const nom = (id) => { const j = ok.find((x) => x.joueur_id === id); return j?.nom || j?.libelle || "joueur"; };
   const annees = [...new Set(etat.tournois.map((t) => t.annee))].sort();
-  let h = `<div class="bloc co-filtres"><label>Équipe <select id="co-cal-eq"><option value="">Tous mes joueurs (${ok.length})</option>${(E.data || []).map((e) =>
-    `<option value="${esc(e.id)}" ${e.id === co.equipe ? "selected" : ""}>${esc(e.nom)} (${(e.equipe_joueurs || []).length})</option>`).join("")}</select></label>
-    <label>Année <select id="co-cal-an">${annees.map((a) => `<option ${a === co.annee ? "selected" : ""}>${a}</option>`).join("")}</select></label>
+  // choix de l'équipe : même présentation que « Équipes de l'AS » (pastilles ; liste déroulante sur téléphone)
+  const ordre = (n) => { const i = EQUIPES_TYPES.indexOf(n); return i < 0 ? 99 : i; };
+  const eqs = (E.data || []).slice().sort((a, b) => ordre(a.nom) - ordre(b.nom) || a.nom.localeCompare(b.nom, "fr")), nb = (e) => (e.equipe_joueurs || []).length;
+  let h = `<div class="co-eq-onglets co-eq-pastilles" role="tablist"><button type="button" role="tab" data-cal-eq="" aria-selected="${!co.equipe}">Tous les joueurs <small>${ok.length}</small></button>
+      ${eqs.map((e) => `<button type="button" role="tab" data-cal-eq="${esc(e.id)}" aria-selected="${e.id === co.equipe}">${esc(e.nom)} <small>${nb(e)}</small></button>`).join("")}</div>
+    <div class="co-eq-onglets co-eq-mobile"><select id="co-cal-eq" aria-label="Équipe"><option value="">Tous les joueurs (${ok.length})</option>${eqs.map((e) =>
+    `<option value="${esc(e.id)}" ${e.id === co.equipe ? "selected" : ""}>${esc(e.nom)} (${nb(e)})</option>`).join("")}</select></div>
+    <div class="bloc co-filtres"><label>Année <select id="co-cal-an">${annees.map((a) => `<option ${a === co.annee ? "selected" : ""}>${a}</option>`).join("")}</select></label>
     <span class="st-legende"><span><i class="lg s-envisage"></i>envisagé</span><span><i class="lg s-inscrit"></i>inscrit</span><span><i class="lg s-joue"></i>joué</span></span></div>`;
   if (!ids.length) return h + `<div class="bloc vide">Pas de joueur dans ${eq ? "cette équipe" : "ta liste"}.</div>`;
   const S = await sb.from("saisons").select("id,user_id,annee").in("user_id", ids).eq("annee", co.annee);
@@ -3906,10 +3941,14 @@ async function htmlCalendrierEquipe() {
   const res = {}; for (const r of R.data || []) res[r.user_id + "|" + r.tournoi_id] = r;
   const parT = {};
   for (const r of I.data || []) { const t = tournoiDe(r.tournoi_id); if (!t) continue; (parT[t.id] ||= { t, j: [] }).j.push({ id: qui[r.saison_id], statut: r.statut }); }
-  const liste = Object.values(parT).sort((a, b) => a.t.debut.localeCompare(b.t.debut));
+  // une équipe ne montre que les tournois de sa catégorie (« Équipe 1 Messieurs » : Adultes ouverts aux hommes, pas les GP Jeunes)
+  const te = eq ? tournoisEquipe(eq.nom) : null;
+  const liste = Object.values(parT).filter((x) => !te || te.ok(x.t)).sort((a, b) => a.t.debut.localeCompare(b.t.debut));
   const communs = liste.filter((x) => x.j.length > 1).length, avenir = liste.filter((x) => x.t.fin >= AUJ);
   h += `<div class="st-tuiles petites">${tuileSt(ids.length, "joueurs")}${tuileSt(liste.length, `tournois en ${co.annee}`)}${tuileSt(communs, "tournois à plusieurs", "rendez-vous de l'équipe")}${tuileSt(avenir.length, "à venir")}</div>`;
-  if (!liste.length) return h + `<div class="bloc vide">Aucun tournoi prévu par ces joueurs en ${co.annee}.</div>`;
+  const quoi = te && (te.circuit || te.sexe) ? ` ${[te.circuit ? CIRCUITS[te.circuit] : "", te.sexe === "H" ? "messieurs" : te.sexe === "D" ? "dames" : ""].filter(Boolean).join(" ")}` : "";
+  if (quoi) h += `<p class="meta">Équipe « ${esc(eq.nom)} » : seulement les tournois${esc(quoi)} de ses joueurs.</p>`;
+  if (!liste.length) return h + `<div class="bloc vide">Aucun tournoi${esc(quoi)} prévu par ces joueurs en ${co.annee}.</div>`;
   let mois = -1; h += `<div class="bloc">`;
   for (const { t, j } of liste) {
     const m = +t.debut.slice(5, 7) - 1;
@@ -3972,6 +4011,7 @@ $("co-contenu").addEventListener("click", async (e) => {
   }
   if (b.dataset.coOuvrir) { const t = tournoiDe(b.dataset.coOuvrir); if (t) ouvrir(t); return; }
   if (b.dataset.eqCal) { co.equipe = b.dataset.eqCal; co.onglet = "calendrier"; rendreCoach(); return; }
+  if (b.dataset.calEq !== undefined) { co.equipe = b.dataset.calEq; rendreCoach(); return; }
   if (b.id === "co-eq-types") {
     const E = await sb.from("equipes").select("nom");
     try { await equipesTypes((E.data || []).map((e) => e.nom)); signaler("Équipes types ajoutées."); } catch (err) { signaler("Impossible : " + err.message); }
