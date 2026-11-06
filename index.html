@@ -971,7 +971,7 @@ body.assistant-ouvert { overflow: hidden; }
   </section>
 
   <section id="ecran-stats" class="ecran-stats" hidden aria-labelledby="st-titre">
-    <div class="s-tete"><h2 id="st-titre">Mes stats <span class="seg" id="st-listes" role="group" aria-label="Mérite"></span></h2></div>
+    <div class="s-tete"><h2 id="st-titre">Mes stats <span class="seg" id="st-listes" role="group" aria-label="Circuit (Mérite)"></span></h2></div>
     <div id="st-contenu"></div>
     <div id="st-bulle" class="st-bulle" role="tooltip" hidden></div>
   </section>
@@ -985,10 +985,11 @@ body.assistant-ouvert { overflow: hidden; }
     <div class="s-tete"><h2 id="ad-titre">Administration</h2></div>
     <form class="bloc" id="ad-form" autocomplete="off">
       <h3>Inviter quelqu'un</h3>
-      <p class="meta">La personne reçoit un e-mail GolfNexus avec un lien (1 heure, une seule fois) ; elle choisit ensuite son mot de passe.</p>
+      <p class="meta">La personne reçoit un e-mail GolfNexus avec un lien (1 heure, une seule fois) ; elle choisit ensuite son mot de passe. La licence d'un joueur est fixée ici : il ne pourra pas la changer (seul l'administrateur la corrige).</p>
       <div class="ad-champs">
         <label>E-mail <input id="ad-email" type="email" required placeholder="prenom.nom@exemple.fr"></label>
         <label>Nom affiché <input id="ad-nom" type="text" maxlength="60" placeholder="ex. Léo Martin"></label>
+        <label>Licence ffgolf <input id="ad-lic" type="text" inputmode="numeric" maxlength="12" pattern="[0-9 ]{6,14}" placeholder="obligatoire pour un joueur"></label>
         <label>Rôle <select id="ad-role">
           <option value="joueur">Joueur (18 ans et +)</option>
           <option value="mineur">Joueur de moins de 18 ans (e-mail du parent)</option>
@@ -2658,17 +2659,18 @@ function rendreProfil() {
   const v = (id, x) => { const el = $(id); if (document.activeElement !== el) el.value = x ?? ""; };
   v("p-nom", f.nom); v("p-club", f.club); v("p-sexe", f.sexe); v("p-naissance", f.naissance); v("p-index", f.index == null ? "" : String(f.index).replace(".", ","));
   v("p-moy", f.moy == null ? "" : signe(f.moy)); v("p-dist", f.distMax);
-  { // licence : compte seulement ; changement 1 fois / 30 jours (imposé par la base)
+  { // licence : compte seulement ; fixée à l'invitation (ou saisie une seule fois pour un compte ancien), puis non
+    // modifiable par le joueur — seul l'administrateur la corrige (imposé par la base, 06/11)
     const lic = Saison.licence || {}, compteOk = Saison.mode === "compte";
     $("p-licence-lib").hidden = !compteOk;
     if (compteOk) {
       v("p-licence", lic.num);
-      const libre = lic.le ? new Date(new Date(lic.le).getTime() + 30 * 864e5) : null, bloque = lic.num && libre && libre > new Date();
-      $("p-licence").disabled = !!bloque;
+      const bloque = !!lic.num;
+      $("p-licence").disabled = bloque;
       $("p-licence-aide").textContent = !lic.num ? "sur ta carte ou l'appli ffgolf · sert à retrouver tes places obtenues (chaque lundi)"
         : (lic.verif === "ok" ? "✓ reconnue dans tes résultats · " : lic.verif === "nom_different" ? "⚠ cette licence ne correspond pas à ta fiche Mérite · "
           : lic.verif === "introuvable" ? "pas encore trouvée dans les résultats de ta saison · " : "vérification au prochain passage (lundi) · ")
-          + (bloque ? `modifiable à partir du ${libre.toLocaleDateString("fr-FR")}` : "modifiable");
+          + "non modifiable : pour la corriger, contacte l'administrateur";
     }
   }
   $("p-dist-auto").checked = f.distAuto !== false;
@@ -2753,9 +2755,11 @@ $("p-form").addEventListener("change", async (e) => {
     const n = val.replace(/\s/g, "");
     if (n && !/^\d{6,12}$/.test(n)) { e.target.setCustomValidity("chiffres uniquement"); e.target.reportValidity(); return; }
     e.target.setCustomValidity("");
-    if (n && n !== Saison.licence.num && !confirm(`Enregistrer la licence ${n} ?\nElle ne pourra plus être changée pendant 30 jours.`)) { rendreProfil(); return; }
+    if (n && n !== Saison.licence.num && !confirm(`Enregistrer la licence ${n} ?\nElle ne pourra plus être changée (seul l'administrateur peut la corriger).`)) { rendreProfil(); return; }
     const { data, error } = await sb.from("profils").update({ licence: n || null }).eq("id", Saison.user.id).select("licence,licence_le,licence_verif").maybeSingle();
-    if (error) signaler(/licence_verrouillee/.test(error.message) ? "Licence verrouillée : " + error.message.replace(/.*modifiable/, "modifiable") : "Enregistrement impossible : " + error.message);
+    if (error) signaler(/licence_fixee|licence_verrouillee/.test(error.message) ? "Licence non modifiable : pour la corriger, contacte l'administrateur."
+      : error.code === "23505" || /profils_licence_unique/.test(error.message) ? `La licence ${n} est déjà utilisée par un autre compte GolfNexus. Si c'est bien la tienne, contacte l'administrateur.`
+      : "Enregistrement impossible : " + error.message);
     else { Saison.licence = { num: data.licence || "", le: data.licence_le, verif: data.licence_verif }; Saison.resultats = {};
       signaler(n ? "Licence enregistrée." : "Licence retirée."); if (n) lancerReleve(true); }
     rendreProfil(); return;
@@ -2859,8 +2863,10 @@ document.addEventListener("click", (e) => { if (e.target.closest("[data-ecran-pr
 // Données du joueur seulement : historique Mérite mensuel + tournois comptés (merite_mois / merite_tournois),
 // places obtenues et trou par trou des GP (resultats_perso). Graphiques en SVG maison : traits 2 px, marqueurs
 // ≥ 8 px avec anneau, grille fine, info-bulle au survol, couleurs validées (clair et sombre, daltonisme).
-const LISTES_M = { amateurs: "Amateurs", jeunes: "Jeunes", midams: "Mid-Amateurs", seniors: "Seniors" };
-const st = { liste: null };
+// Mérites ffgolf, nommés et rangés comme les circuits (le Mérite National Amateur = circuit « Adultes »)
+const LISTES_M = { jeunes: "Jeunes", amateurs: "Adultes", midams: "Mid-Amateurs", seniors: "Seniors" };
+const LISTE_DU_CIRCUIT = { jeunes: "jeunes", gp: "amateurs", mid: "midams", seniors: "seniors" };
+const st = { circuit: null, liste: null };
 const moyenne = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 const ecartType = (a) => { const m = moyenne(a); return a.length > 1 ? Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)) : null; };
 const fx = (x, d = 1) => (x == null || isNaN(x) ? "—" : x.toLocaleString("fr-FR", { maximumFractionDigits: d, minimumFractionDigits: 0 }));
@@ -2937,46 +2943,68 @@ function rendreStats() {
   const larg = Math.max(300, ($("st-contenu").clientWidth || document.documentElement.clientWidth) - 32);
   st.l1 = Math.min(1040, larg); st.l2 = larg < 760 ? larg : Math.min(520, Math.floor(larg / 2) - 12);
   const S = Saison.stats || { mois: [], tournois: [] }, f = Saison.fiche || {};
-  const listes = [...new Set(S.mois.map((m) => m.liste))].sort((a, b) => Object.keys(LISTES_M).indexOf(a) - Object.keys(LISTES_M).indexOf(b));
-  if (!listes.includes(st.liste)) st.liste = listes.includes("amateurs") ? "amateurs" : listes[0] || null;
-  $("st-listes").innerHTML = listes.length > 1 ? listes.map((l) => `<button type="button" data-st-liste="${l}" aria-pressed="${l === st.liste}">${LISTES_M[l] || l}</button>`).join("") : "";
+  // Onglets = les CIRCUITS où il joue (tournois joués de sa saison, places relevées par la licence, tournois comptés
+  // à un Mérite) : on peut jouer chez les adultes sans être classé au Mérite. Le Mérite du circuit s'affiche s'il y figure.
+  const R0 = Object.entries(Saison.resultats || {}).map(([id, r]) => ({ ...r, t: tournoiDe(id) })).filter((r) => r.t).sort((a, b) => a.t.debut.localeCompare(b.t.debut));
+  const joues = Object.values(Saison.items || {}).flatMap((o) => Object.entries(o || {})).filter(([, e]) => e.statut === "joue").map(([id]) => tournoiDe(id)).filter(Boolean);
+  const circuitDeListe = Object.fromEntries(Object.entries(LISTE_DU_CIRCUIT).map(([c, l]) => [l, c]));
+  const presents = new Set([...joues.map(circuitDe), ...R0.map((r) => circuitDe(r.t)), ...S.tournois.map((t) => circuitDeListe[t.liste]).filter(Boolean)]);
+  const circuits = Object.keys(CIRCUITS).filter((c) => presents.has(c));
+  // par défaut : le circuit de sa fiche, sinon Adultes, sinon le premier
+  if (!circuits.includes(st.circuit)) st.circuit = [f.circuit, "gp", circuits[0]].find((c) => circuits.includes(c)) || null;
+  st.liste = LISTE_DU_CIRCUIT[st.circuit] || "amateurs";
+  $("st-listes").innerHTML = circuits.length > 1 ? circuits.map((c) => `<button type="button" data-st-circuit="${c}" aria-pressed="${c === st.circuit}">${CIRCUITS[c]}</button>`).join("") : "";
   const C = $("st-contenu");
-  if (!f.merite) { C.innerHTML = `<div class="bloc vide">Choisis d'abord ta fiche Mérite dans <button type="button" class="lien" data-ecran-profil>Mon profil</button> : tes statistiques en viennent.</div>`; return; }
-  if (!listes.length) { C.innerHTML = `<div class="bloc vide">Ton historique Mérite n'est pas encore relevé (il l'est chaque lundi, depuis décembre 2024).
+  if (!f.merite && !R0.length) { C.innerHTML = `<div class="bloc vide">Choisis ta fiche Mérite et saisis ta licence dans <button type="button" class="lien" data-ecran-profil>Mon profil</button> : tes statistiques en viennent.</div>`; return; }
+  if (!circuits.length) { C.innerHTML = `<div class="bloc vide">Rien de relevé pour l'instant (relevé chaque lundi : Mérite depuis décembre 2024, places des tournois joués).
     ${Saison.demo ? "" : `<p><button type="button" class="btn plein" id="st-releve">Lancer mon relevé maintenant</button></p><p class="meta">1 à 2 minutes ; une fois par jour au plus.</p>`}</div>`; return; }
+  const LIB = CIRCUITS[st.circuit], LIBM = `Mérite ${LISTES_M[st.liste]}`;
+  // Mérite du circuit (peut être vide : joueur pas au Mérite de ce circuit)
   const M = S.mois.filter((m) => m.liste === st.liste).sort((a, b) => a.mois.localeCompare(b.mois));
   const T = S.tournois.filter((t) => t.liste === st.liste).sort((a, b) => a.date.localeCompare(b.date));
   const der = M.at(-1), avant = M.at(-2);
-  const il12 = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10), T12 = T.filter((t) => t.date >= il12);
+  const il12 = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+  // tournois relevés de CE circuit (place / champ, trou par trou)
+  const R = R0.filter((r) => circuitDe(r.t) === st.circuit);
+  // tournois joués servant aux places et à l'activité : ceux relevés du circuit, sinon ceux comptés au Mérite du circuit
+  const J = R.length ? R.map((r) => ({ date: r.t.debut, nom: r.t.nom, place: r.place, tours: r.tours || [] })) : T;
+  const J12 = J.filter((t) => t.date >= il12), source = R.length ? `tournois ${LIB} relevés` : `tournois comptés au ${LIBM}`;
 
-  // ---- tours vs SSS (SSS du tournoi = moyenne des tours − « Moy.SSS » du Mérite)
+  // ---- tours vs SSS : SSS du repère de compétition pour les tournois relevés ; sinon SSS déduit du Mérite
+  // (moyenne des tours − « Moy.SSS »)
   const tours = [];
-  for (const t of T) {
+  const sx = f.sexe === "D" ? "D" : "H";
+  for (const r of R) {
+    const g = golfDe(r.t), pc = g && parcoursJoue(g, r.parcours), rp = pc && repereCompet(pc, sx, r.t), sss = rp && (sx === "D" ? rp.sss_d : rp.sss_h);
+    if (sss && r.tours?.length) r.tours.forEach((sc, i) => sc > 0 && tours.push({ date: r.t.debut, nom: r.t.nom, n: i + 1, d: sc - sss, score: sc }));
+  }
+  if (!tours.length) for (const t of T) {
     if (!t.tours?.length || t.moy_sss == null) continue;
     const sss = moyenne(t.tours) - t.moy_sss;
-    t.tours.forEach((s, i) => tours.push({ date: t.date, nom: t.nom, n: i + 1, d: s - sss, score: s }));
+    t.tours.forEach((sc, i) => tours.push({ date: t.date, nom: t.nom, n: i + 1, d: sc - sss, score: sc }));
   }
+  tours.sort((a, b) => a.date.localeCompare(b.date) || a.n - b.n);
   const tours12 = tours.filter((x) => x.date >= il12), ds12 = tours12.map((x) => x.d);
-  // ---- places (tous les tournois du Mérite)
-  const pl = T12.map((t) => placeNum(t.place)), classes = pl.filter((x) => x != null);
-  const nonClasses = T12.filter((t) => placeNum(t.place) == null).length;
-  // ---- GP relevés (place / champ, trou par trou)
-  const R = Object.entries(Saison.resultats || {}).map(([id, r]) => ({ ...r, t: tournoiDe(id) })).filter((r) => r.t).sort((a, b) => a.t.debut.localeCompare(b.t.debut));
+  // ---- places
+  const pl = J12.map((t) => placeNum(t.place)), classes = pl.filter((x) => x != null);
+  const nonClasses = J12.filter((t) => placeNum(t.place) == null).length;
 
   let h = "";
   // 0. en bref
   const delta = der && avant && der.place && avant.place ? avant.place - der.place : null;
   h += `<div class="st-tuiles">
-    ${tuileSt(der?.place ? fx(der.place, 0) + "<small>e</small>" : "—", `au Mérite ${LISTES_M[st.liste]}`, delta ? `<span class="${delta > 0 ? "mieux" : "moins"}">${delta > 0 ? "▲ " + delta : "▼ " + -delta} place${Math.abs(delta) > 1 ? "s" : ""}</span> en un mois` : moisLib(der.mois))}
-    ${tuileSt(sg(der?.moy, 2), "moyenne vs SSS (12 mois)", der?.moy6 != null ? `6 derniers mois : ${sg(der.moy6, 2)}` : "")}
-    ${tuileSt(der?.index_golf != null ? fx(der.index_golf) : "—", "index", der?.statut || "")}
+    ${tuileSt(der?.place ? fx(der.place, 0) + "<small>e</small>" : "—", `au ${LIBM}`, !der ? "pas au Mérite de ce circuit" : delta ? `<span class="${delta > 0 ? "mieux" : "moins"}">${delta > 0 ? "▲ " + delta : "▼ " + -delta} place${Math.abs(delta) > 1 ? "s" : ""}</span> en un mois` : der.place ? moisLib(der.mois) : "non classé")}
+    ${der?.moy != null ? tuileSt(sg(der.moy, 2), "moyenne vs SSS (12 mois)", der.moy6 != null ? `6 derniers mois : ${sg(der.moy6, 2)}` : "")
+      : tuileSt(sg(moyenne(ds12), 2), "moyenne vs SSS (12 mois)", ds12.length ? `sur ses ${ds12.length} tours relevés` : "")}
+    ${tuileSt(der?.index_golf != null ? fx(der.index_golf) : f.index != null ? fx(f.index) : "—", "index", der?.statut || "")}
     ${tuileSt(fx(ecartType(ds12), 1), "régularité (écart-type d'un tour)", ds12.length ? `${ds12.length} tours sur 12 mois` : "")}
-    ${tuileSt(fx(T12.length, 0), "tournois sur 12 mois", `${fx(tours12.length, 0)} tours · ${fx(der?.victoires ?? 0, 0)} victoire${(der?.victoires || 0) > 1 ? "s" : ""}`)}
+    ${tuileSt(fx(J12.length, 0), `tournois ${LIB} sur 12 mois`, `${fx(tours12.length, 0)} tours · ${fx(der?.victoires ?? 0, 0)} victoire${(der?.victoires || 0) > 1 ? "s" : ""}`)}
   </div>`;
 
   // 4. Mérite mois par mois (petits multiples : une mesure par graphique, jamais deux échelles)
   const pts = (k, fmt) => M.map((m) => ({ x: moisLib(m.mois), y: m[k] == null ? null : +m[k], tip: m[k] == null ? null : fmt(+m[k]) }));
-  h += blocSt("Mérite mois par mois", "Relevé chaque mois depuis décembre 2024 : progresse-t-il ou recule-t-il ?", `
+  if (!M.length) h += blocSt(LIBM, "", `<p class="meta">Pas de fiche au ${LIBM} : ses tournois ${LIB} sont bien pris en compte ci-dessous (places, tour par tour, trou par trou), mais il n'y a ni place ni points au Mérite à suivre pour ce circuit.</p>`);
+  else h += blocSt(`${LIBM} mois par mois`, "Relevé chaque mois depuis décembre 2024 : progresse-t-il ou recule-t-il ?", `
     <div class="st-multi">
       <div><h4>Place au Mérite <small>(plus bas = mieux)</small></h4>${svgLignes({ series: [{ nom: "Place", cls: "c1", pts: pts("place", (v) => fx(v, 0) + "e") }], fmt: (v) => fx(v, 0), W: st.l2 })}</div>
       <div><h4>Moyenne par rapport au SSS <small>(vers le bas = mieux)</small></h4>
@@ -2987,7 +3015,7 @@ function rendreStats() {
     </div>`);
 
   // 4 bis. ce qu'il faut pour gagner des places
-  h += `<div id="st-simu">${blocSt("Ce qu'il te faut pour monter", "", `<p class="meta">Calcul en cours (lecture du Mérite ${LISTES_M[st.liste]} du mois)…</p>`)}</div>`;
+  if (der?.place) h += `<div id="st-simu">${blocSt("Ce qu'il te faut pour monter", "", `<p class="meta">Calcul en cours (lecture du ${LIBM} du mois)…</p>`)}</div>`;
 
   // 2. niveau réel tour par tour
   if (tours.length) {
@@ -3028,7 +3056,7 @@ function rendreStats() {
     const parTrou = {};
     for (const x of H) (parTrou[`${x.parcours}|${x.i + 1}|${x.p}`] ||= []).push(x.d);
     const durs = Object.entries(parTrou).filter(([, v]) => v.length >= 2).map(([k, v]) => ({ k, m: moyenne(v), n: v.length })).sort((a, b) => b.m - a.m).slice(0, 3);
-    h += blocSt("Trou par trou", `Sur ${fx(nbTours, 0)} tours de Grands Prix relevés (scores de chaque trou publiés par la ffgolf).`, `
+    h += blocSt("Trou par trou", `Sur ${fx(nbTours, 0)} tours ${LIB} relevés (scores de chaque trou publiés par la ffgolf).`, `
       <div class="st-duo">
         <div><h4>Coups au-dessus du par, en moyenne par trou</h4>
           ${svgColonnes({ barres: parType.map((x) => ({ lib: `Par ${x.p}`, v: +x.v.toFixed(2), cls: "c1", tip: `<b>Par ${x.p}</b><br>${sg(x.v, 2)} par trou<br>${x.c} trous joués` })), fmt: (v) => sg(v, 2), h: 160, W: st.l2 })}
@@ -3041,7 +3069,7 @@ function rendreStats() {
             ${durs.map((x) => { const [pc, n, p] = x.k.split("|"); return `<li>Trou ${n} (par ${p}) de ${esc(titre(pc))} : <b>${sg(x.m, 2)}</b> en moyenne sur ${x.n} passages</li>`; }).join("")}
           </ul></div>
       </div>`);
-  } else if (Saison.licence?.num) h += blocSt("Trou par trou", "", `<p class="meta">Le trou par trou vient des Grands Prix relevés grâce à ta licence (chaque lundi) : il apparaîtra au prochain passage.</p>`);
+  } else if (Saison.licence?.num) h += blocSt("Trou par trou", "", `<p class="meta">Le trou par trou vient des Grands Prix relevés grâce à ta licence (chaque lundi) : il apparaîtra au prochain passage (tournois ${LIB} de ta saison passés en « Joué »).</p>`);
 
   // 3. places : en clair, sans pourcentages abstraits
   const avecChamp = R.filter((r) => placeNum(r.place) && r.classes);
@@ -3049,40 +3077,40 @@ function rendreStats() {
   const lignesGP = R.map((r) => { const e = estimePlace(r.t), n = placeNum(r.place); return { r, e, n, ecart: e?.place && n ? n - e.place : null }; });
   const ecarts = lignesGP.map((x) => x.ecart).filter((x) => x != null);
   const nTop10 = classes.filter((x) => x <= 10).length, nVict = classes.filter((x) => x === 1).length;
-  h += blocSt("Tes places", `Sur les 12 derniers mois : ${T12.length} tournois comptés au Mérite.`, `
+  h += blocSt("Tes places", `Sur les 12 derniers mois : ${J12.length} ${source}.`, `
     <ul class="st-liste st-gros">
-      <li><b>${nVict} victoire${nVict > 1 ? "s" : ""}</b> et <b>${nTop10} fois dans les 10 premiers</b> sur ${T12.length} tournois.</li>
-      <li><b>Cut passé ${classes.length} fois sur ${T12.length}</b>${nonClasses ? ` (${nonClasses} fois non classé : cut manqué ou abandon)` : ""}.</li>
-      ${pct.length ? `<li>Sur les Grands Prix relevés, il finit en moyenne <b>${Math.round(moyenne(pct)) <= 50 ? "dans la première moitié" : "dans la seconde moitié"} du classement</b> : sur 100 joueurs classés, vers la <b>${Math.round(moyenne(pct))}ᵉ place</b>.</li>` : ""}
+      <li><b>${nVict} victoire${nVict > 1 ? "s" : ""}</b> et <b>${nTop10} fois dans les 10 premiers</b> sur ${J12.length} tournois.</li>
+      <li><b>Cut passé ${classes.length} fois sur ${J12.length}</b>${nonClasses ? ` (${nonClasses} fois non classé : cut manqué ou abandon)` : ""}.</li>
+      ${pct.length ? `<li>Sur les tournois ${LIB} relevés, il finit en moyenne <b>${Math.round(moyenne(pct)) <= 50 ? "dans la première moitié" : "dans la seconde moitié"} du classement</b> : sur 100 joueurs classés, vers la <b>${Math.round(moyenne(pct))}ᵉ place</b>.</li>` : ""}
       ${ecarts.length ? `<li>Par rapport à l'estimation de GolfNexus, il finit en moyenne <b>${fx(Math.abs(moyenne(ecarts)), 0)} place${Math.abs(moyenne(ecarts)) >= 2 ? "s" : ""} ${moyenne(ecarts) < 0 ? "plus haut" : "plus bas"}</b> que prévu.</li>` : ""}
     </ul>
-    ${lignesGP.length ? `<div class="st-table"><table><thead><tr><th>Grand Prix relevé</th><th>Place obtenue</th><th>Joueurs classés</th><th>Place estimée</th><th>Écart</th></tr></thead><tbody>
+    ${lignesGP.length ? `<div class="st-table"><table><thead><tr><th>Tournoi ${LIB} relevé</th><th>Place obtenue</th><th>Joueurs classés</th><th>Place estimée</th><th>Écart</th></tr></thead><tbody>
       ${lignesGP.slice().reverse().map(({ r, e, ecart }) => `<tr><td>${fmtDate(r.t.debut)} · ${esc(titre(r.t.nom))}</td><td><b>${esc(String(r.place).replace(/^(\d+)/, "$1ᵉ"))}</b></td><td>${r.classes ?? "—"}</td><td>${e?.place ? e.place + "ᵉ" : "—"}</td><td>${ecart == null ? "—" : `<span class="${ecart < 0 ? "mieux" : ecart > 0 ? "moins" : ""}">${ecart < 0 ? "▲ " + -ecart + " mieux" : ecart > 0 ? "▼ " + ecart + " moins bien" : "= pile"}</span>`}</td></tr>`).join("")}
     </tbody></table></div>` : ""}`);
 
   // 5. activité
   const parMois = {};
-  for (const t of T12) { const k = t.date.slice(0, 7); (parMois[k] ||= { n: 0, tours: 0 }); parMois[k].n++; parMois[k].tours += t.tours?.length || 0; }
+  for (const t of J12) { const k = t.date.slice(0, 7); (parMois[k] ||= { n: 0, tours: 0 }); parMois[k].n++; parMois[k].tours += t.tours?.length || 0; }
   const mois12 = []; { const d = new Date(); d.setDate(1); for (let i = 11; i >= 0; i--) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); mois12.push(`${x.getFullYear()}-${pad(x.getMonth() + 1)}`); } }
   const dom = Saison.domicile(), an = new Date().getFullYear();
   const kmAn = Object.values(Saison.items || {}).flatMap((o) => Object.entries(o || {})).map(([id, e]) => ({ t: tournoiDe(id), e }))
-    .filter((x) => x.t && x.t.annee === an && x.e.statut === "joue").reduce((s, x) => { const p = posDe(x.t); return s + (dom && p ? 2 * km(dom, p) : 0); }, 0);
+    .filter((x) => x.t && x.t.annee === an && x.e.statut === "joue" && circuitDe(x.t) === st.circuit).reduce((s, x) => { const p = posDe(x.t); return s + (dom && p ? 2 * km(dom, p) : 0); }, 0);
   h += blocSt("Le travail fourni", "Tours de compétition joués par mois (12 derniers mois).", `
     ${svgColonnes({ barres: mois12.map((k) => ({ lib: MOIS_COURT[+k.slice(5) - 1], v: parMois[k]?.tours || 0, cls: "c1", etiq: !!parMois[k]?.tours,
       tip: `<b>${MOIS[+k.slice(5) - 1]} ${k.slice(0, 4)}</b><br>${parMois[k]?.n || 0} tournoi(s) · ${parMois[k]?.tours || 0} tours` })), fmt: (v) => fx(v, 0), h: 160, W: st.l1 })}
     <ul class="st-liste">
-      <li><b>${fx(tours12.length || T12.reduce((s, t) => s + (t.tours?.length || 0), 0), 0)} tours</b> de compétition en 12 mois, soit ${fx(T12.reduce((s, t) => s + (t.tours?.length || 0), 0) / 12)} par mois</li>
-      ${kmAn ? `<li><b>${fx(Math.round(kmAn / 10) * 10, 0)} km</b> aller-retour pour les tournois joués de ta saison ${an} (à vol d'oiseau)</li>` : ""}
+      <li><b>${fx(J12.reduce((s, t) => s + (t.tours?.length || 0), 0), 0)} tours</b> de compétition ${LIB} en 12 mois, soit ${fx(J12.reduce((s, t) => s + (t.tours?.length || 0), 0) / 12)} par mois</li>
+      ${kmAn ? `<li><b>${fx(Math.round(kmAn / 10) * 10, 0)} km</b> aller-retour pour les tournois ${LIB} joués de ta saison ${an} (à vol d'oiseau)</li>` : ""}
       ${M.length > 2 ? `<li>Moyenne vs SSS : ${sg(M[0].moy, 2)} en ${moisLib(M[0].mois)} → ${sg(der.moy, 2)} en ${moisLib(der.mois)} (${der.moy < M[0].moy ? "en progrès" : "à retravailler"})</li>` : ""}
     </ul>`);
 
   // tableau (vue tableau des données)
-  h += blocSt("Tous les tournois comptés", `${T.length} tournois du Mérite ${LISTES_M[st.liste]} (ffgolf garde environ 12 mois glissants ; GolfNexus les conserve).`, `
+  if (T.length) h += blocSt("Tous les tournois comptés", `${T.length} tournois du ${LIBM} (ffgolf garde environ 12 mois glissants ; GolfNexus les conserve).`, `
     <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Cat.</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
     ${T.slice().reverse().map((t) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
     </tbody></table></div>`);
   // mise à jour à la demande (relevé immédiat, 1 fois par jour) ; dernière lecture du Mérite
-  if (!Saison.demo) h += `<p class="meta st-maj">Dernier relevé du Mérite : ${moisLib(der.mois)}${der.lu_le ? ` (lu le ${fmtDate(String(der.lu_le).slice(0, 10))})` : ""}.
+  if (!Saison.demo) h += `<p class="meta st-maj">${der ? `Dernier relevé du ${LIBM} : ${moisLib(der.mois)}` : "Relevé"}${der?.lu_le ? ` (lu le ${fmtDate(String(der.lu_le).slice(0, 10))})` : ""}.
     Relevé automatique chaque lundi · <button type="button" class="lien" id="st-releve">${Saison.releve === "en cours" ? "relevé en cours…" : "Mettre à jour maintenant"}</button> (une fois par jour).</p>`;
   C.innerHTML = h;
   simulation(der);
@@ -3125,7 +3153,7 @@ async function simulation(der) {
       <p class="meta">Repères : tes tournois ont rapporté de ${fx(pts.at(-1) ?? 0, 1)} à ${fx(pts[0] ?? 0, 1)} points (médiane ${fx(pts[Math.floor(pts.length / 2)] ?? 0, 1)}). Les points dépendent de la place et de la catégorie du tournoi. Estimation : les autres joueurs marquent aussi des points d'ici le prochain Mérite.</p>`);
   } catch { box.innerHTML = blocSt("Ce qu'il te faut pour monter", "", `<p class="meta">Mérite du mois illisible pour l'instant (hors ligne ?).</p>`); }
 }
-$("st-listes").addEventListener("click", (e) => { const b = e.target.closest("[data-st-liste]"); if (b) { st.liste = b.dataset.stListe; rendreStats(); } });
+$("st-listes").addEventListener("click", (e) => { const b = e.target.closest("[data-st-circuit]"); if (b) { st.circuit = b.dataset.stCircuit; rendreStats(); } });
 // info-bulle des graphiques
 {
   const bulle = $("st-bulle"), zone = $("ecran-stats");
@@ -3316,8 +3344,8 @@ async function envoiAcces(e) {
   }
   if (e.target.id === "p-inviter") {
     e.preventDefault();
-    const err = await inviter($("p-inv-email").value.trim().toLowerCase(), $("p-inv-mineur").checked ? "mineur" : "joueur", $("p-inv-nom").value.trim());
-    signaler(err ? (/déjà un compte/.test(err) ? "Cette adresse a déjà un compte : demande l'accès avec sa licence." : "Invitation impossible : " + err)
+    const err = await inviter($("p-inv-email").value.trim().toLowerCase(), $("p-inv-mineur").checked ? "mineur" : "joueur", $("p-inv-nom").value.trim(), $("p-inv-lic").value);
+    signaler(err ? (/déjà un compte/.test(err) ? "Ce joueur a déjà un compte : demande l'accès avec sa licence." : "Invitation impossible : " + err)
       : "Invitation envoyée. Ta demande de suivi l'attendra à son inscription.");
     if (!err) e.target.reset();
     return;
@@ -3401,9 +3429,10 @@ function panneauAjout() {
     <form class="co-ajout-bloc" id="p-inviter"><h4>Inviter (pas encore de compte)</h4><p class="meta">E-mail GolfNexus ; ta demande de suivi l'attend à l'inscription.</p>
       <div class="c-form"><input id="p-inv-email" type="email" placeholder="e-mail (du parent si moins de 18 ans)" aria-label="E-mail" required>
       <input id="p-inv-nom" maxlength="60" placeholder="nom du joueur" aria-label="Nom du joueur">
+      <input id="p-inv-lic" inputmode="numeric" maxlength="12" pattern="[0-9 ]{6,14}" required placeholder="licence ffgolf" aria-label="Licence ffgolf du joueur" title="obligatoire : fixée à l'invitation, le joueur ne pourra pas la changer">
       <label class="p-inv-mineur"><input id="p-inv-mineur" type="checkbox"> moins de 18 ans</label><button type="submit" class="btn">Inviter</button></div></form>
-    <div class="co-ajout-bloc"><h4>Invitations en masse</h4><p class="meta">Une ligne par joueur : <code>e-mail ; nom ; mineur</code> (« mineur » si moins de 18 ans).</p>
-      <textarea id="co-masse-inv" rows="4" placeholder="parent.leo@exemple.fr ; Léo Martin ; mineur&#10;paul.durand@exemple.fr ; Paul Durand" aria-label="Invitations"></textarea>
+    <div class="co-ajout-bloc"><h4>Invitations en masse</h4><p class="meta">Une ligne par joueur : <code>e-mail ; licence ; nom ; mineur</code> (licence obligatoire ; « mineur » si moins de 18 ans).</p>
+      <textarea id="co-masse-inv" rows="4" placeholder="parent.leo@exemple.fr ; 123456789 ; Léo Martin ; mineur&#10;paul.durand@exemple.fr ; 987654321 ; Paul Durand" aria-label="Invitations"></textarea>
       <button type="button" class="btn" id="co-masse-invit">Envoyer les invitations</button></div>
   </div>`;
 }
@@ -3586,9 +3615,10 @@ $("co-contenu").addEventListener("click", async (e) => {
     const lignes = $("co-masse-inv").value.split("\n").map((l) => l.split(/[;\t]/).map((x) => x.trim())).filter((x) => x[0] && x[0].includes("@"));
     if (!lignes.length) { signaler("Aucune ligne avec un e-mail."); return; }
     b.disabled = true; let ok = 0; const ko = [];
-    for (const [email, nom, m] of lignes) {
+    for (const [email, lic, nom, m] of lignes) {
       b.textContent = `Envoi ${ok + ko.length + 1}/${lignes.length}…`;
-      const err = await inviter(email.toLowerCase(), /mineur|oui|x|1/i.test(m || "") ? "mineur" : "joueur", nom || "");
+      const err = !/^\d{6,12}$/.test(String(lic || "").replace(/\s/g, "")) ? "licence manquante ou invalide (2e colonne)"
+        : await inviter(email.toLowerCase(), /mineur|oui|^x$|^1$/i.test(m || "") ? "mineur" : "joueur", nom || "", lic);
       if (err) ko.push(`${email} (${err})`); else ok++;
     }
     b.disabled = false; b.textContent = "Envoyer les invitations";
@@ -3652,18 +3682,19 @@ async function rendreAdmin() {
   if (Saison.role !== "admin") { $("ad-membres").innerHTML = "<p class='meta'>Réservé à l'administrateur.</p>"; return; }
   const [M, I] = await Promise.all([sb.rpc("admin_membres"), sb.rpc("admin_invitations")]);
   const roles = { admin: "Administrateur", coach: "Coach", joueur: "Joueur" };
-  $("ad-invits").innerHTML = (I.data || []).length ? (I.data || []).map((i) => `<div class="acces-ligne"><div class="qui"><b>${esc(i.email)}</b><small>${esc(i.nom || "")} · ${roles[i.role]}${i.mineur ? " (moins de 18 ans)" : ""} · invité le ${fmtDate(String(i.cree_le).slice(0, 10))}</small></div>
-    <button type="button" class="btn" data-reinviter="${esc(i.email)}" data-role="${i.mineur ? "mineur" : i.role}" data-nom="${esc(i.nom || "")}">Renvoyer</button></div>`).join("") : "<p class='meta'>Aucune invitation en attente.</p>";
+  $("ad-invits").innerHTML = (I.data || []).length ? (I.data || []).map((i) => `<div class="acces-ligne"><div class="qui"><b>${esc(i.email)}</b><small>${esc(i.nom || "")} · ${roles[i.role]}${i.mineur ? " (moins de 18 ans)" : ""}${i.licence ? " · licence " + esc(i.licence) : ""} · invité le ${fmtDate(String(i.cree_le).slice(0, 10))}</small></div>
+    <button type="button" class="btn" data-reinviter="${esc(i.email)}" data-role="${i.mineur ? "mineur" : i.role}" data-nom="${esc(i.nom || "")}" data-licence="${esc(i.licence || "")}">Renvoyer</button></div>`).join("") : "<p class='meta'>Aucune invitation en attente.</p>";
   if (M.error) { $("ad-membres").innerHTML = `<p class="meta">${esc(M.error.message)}</p>`; return; }
   $("ad-membres").innerHTML = `<table><thead><tr><th>Compte</th><th>Nom</th><th>Rôle</th><th>Moins de 18 ans</th><th>Licence</th><th>Parent validé</th><th>Dernière connexion</th></tr></thead><tbody>
     ${(M.data || []).map((m) => `<tr><td>${esc(m.email)}</td><td>${esc(m.nom || "")}</td>
       <td><select class="ad-role" data-membre="${esc(m.id)}">${Object.entries(roles).map(([k, v]) => `<option value="${k}" ${k === m.role ? "selected" : ""}>${v}</option>`).join("")}</select></td>
       <td><input type="checkbox" class="ad-mineur" data-membre="${esc(m.id)}" ${m.mineur ? "checked" : ""}></td>
-      <td>${esc(m.licence || "—")}</td><td>${m.mineur ? (m.parent_valide_le ? "✓ " + fmtDate(String(m.parent_valide_le).slice(0, 10)) : "en attente") : "—"}</td>
+      <td>${esc(m.licence || "—")} <button type="button" class="lien" data-corriger-lic="${esc(m.id)}" data-lic="${esc(m.licence || "")}" data-email="${esc(m.email)}">corriger</button></td><td>${m.mineur ? (m.parent_valide_le ? "✓ " + fmtDate(String(m.parent_valide_le).slice(0, 10)) : "en attente") : "—"}</td>
       <td>${m.derniere_connexion ? fmtDate(String(m.derniere_connexion).slice(0, 10)) : "jamais"}</td></tr>`).join("")}</tbody></table>`;
 }
-async function inviter(email, role, nom) {
-  const { data, error } = await sb.functions.invoke("inviter", { body: { email, role: role === "mineur" ? "joueur" : role, mineur: role === "mineur", nom,
+// licence : obligatoire pour un joueur (06/11), fixée à l'invitation, non modifiable par le joueur
+async function inviter(email, role, nom, licence = "") {
+  const { data, error } = await sb.functions.invoke("inviter", { body: { email, role: role === "mineur" ? "joueur" : role, mineur: role === "mineur", nom, licence: String(licence || "").replace(/\s/g, ""),
     site: location.origin + location.pathname } });
   const msg = error ? (await error.context?.json?.().catch(() => null))?.erreur || error.message : data?.erreur;
   return msg || null;
@@ -3671,14 +3702,22 @@ async function inviter(email, role, nom) {
 $("ad-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const m = $("ad-msg"), btn = $("ad-ok"); btn.disabled = true; m.textContent = "Envoi…"; m.classList.remove("erreur");
-  const err = await inviter($("ad-email").value.trim().toLowerCase(), $("ad-role").value, $("ad-nom").value.trim());
+  const err = await inviter($("ad-email").value.trim().toLowerCase(), $("ad-role").value, $("ad-nom").value.trim(), $("ad-lic").value);
   btn.disabled = false;
   if (err) { m.textContent = "Invitation impossible : " + err; m.classList.add("erreur"); return; }
   m.textContent = `Invitation envoyée à ${$("ad-email").value.trim()}.`; $("ad-form").reset(); rendreAdmin();
 });
 $("ecran-admin").addEventListener("click", async (e) => {
+  const c = e.target.closest("[data-corriger-lic]");
+  if (c) {   // licence fixée : seul l'administrateur la corrige
+    const n = prompt(`Nouvelle licence pour ${c.dataset.email} (vide = aucune) :`, c.dataset.lic || ""); if (n == null) return;
+    if (n.trim() && !/^\d{6,12}$/.test(n.replace(/\s/g, ""))) { signaler("Licence : 6 à 12 chiffres."); return; }
+    const { error } = await sb.rpc("admin_licence", { uid: c.dataset.corrigerLic, lic: n });
+    signaler(error ? (error.code === "23505" ? "Cette licence est déjà celle d'un autre compte." : "Correction impossible : " + error.message) : "Licence corrigée (ses places seront relevées à nouveau).");
+    rendreAdmin(); return;
+  }
   const b = e.target.closest("[data-reinviter]"); if (!b) return;
-  const err = await inviter(b.dataset.reinviter, b.dataset.role, b.dataset.nom);
+  const err = await inviter(b.dataset.reinviter, b.dataset.role, b.dataset.nom, b.dataset.licence);
   signaler(err ? "Renvoi impossible : " + err : "Invitation renvoyée.");
 });
 $("ecran-admin").addEventListener("change", async (e) => {
@@ -3810,7 +3849,7 @@ function rendreAssistant() {
         `<button type="button" class="p-res" data-as-res="${i}"><b>${esc(x.NOM)} ${esc(x.PRENOM)}</b><span>${esc(x.CATEGORIE || "")} · ${esc(titre(x.GOLF || ""))} · ${/^\d+$/.test(String(x.RANK)) ? x.RANK + "e" : "non classé"}</span></button>`).join("")
         : "<p class='meta'>Personne de ce nom au Mérite de ce mois.</p>") : typeof asst.res === "string" ? `<p class="meta">${esc(asst.res)}</p>` : ""}</div>
       <div class="as-pied"><button type="button" class="lien" data-as="pas-merite">Je ne trouve pas ma fiche</button><button type="submit" class="btn plein">Chercher</button></div>`,
-    licence: `<h2>Ta licence ffgolf</h2><p>Elle sert à retrouver <b>tes places obtenues</b> dans les résultats (et le trou par trou). Elle est sur ta carte de licence ou l'appli ffgolf.</p>
+    licence: `<h2>Ta licence ffgolf</h2><p>Elle sert à retrouver <b>tes places obtenues</b> dans les résultats (et le trou par trou). Elle est sur ta carte de licence ou l'appli ffgolf. <b>Vérifie-la bien : elle ne pourra plus être changée</b> (seul l'administrateur peut la corriger).</p>
       <input id="as-lic" inputmode="numeric" pattern="[0-9 ]{6,14}" required placeholder="ex. 123456789">
       <p class="meta">Sans licence : pas de <b>places obtenues</b> dans « Ma saison », pas de <b>trou par trou</b> ni de comparaison estimée / obtenue. Modifiable une fois par mois ensuite.</p>${pied("Enregistrer")}`,
     cp: `<h2>Ton code postal</h2><p>Pour les distances jusqu'aux golfs et la carte autour de chez toi.</p>
