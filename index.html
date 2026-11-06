@@ -782,6 +782,10 @@ body.assistant-ouvert { overflow: hidden; }
 .p-rappels-jours { display: flex; flex-wrap: wrap; gap: 8px 18px; } .p-rappels-jours label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
 .p-rappels-jours.eteint { opacity: .45; }
 
+/* Mon Mérite : une section par Mérite (Jeunes, Adultes, Mid-Am, Seniors) — 06/11 */
+.p-merite-titre { margin: 14px 0 6px; font-size: 14px; color: var(--texte); }
+.p-merite-titre small { color: var(--doux); font-weight: 500; margin-left: 6px; }
+
 </style>
 </head>
 <body class="verrou">
@@ -1020,7 +1024,6 @@ body.assistant-ouvert { overflow: hidden; }
         <label>Sexe <select id="p-sexe"><option value="">—</option><option value="H">Messieurs</option><option value="D">Dames</option></select></label>
         <label>Année de naissance <input id="p-naissance" type="number" min="1920" max="2025" step="1" placeholder="ex. 2010"><small id="p-categorie"></small></label>
         <label>Index <input id="p-index" type="text" inputmode="decimal" placeholder="ex. 4,2"><small id="p-index-aide"></small></label>
-        <label>Moyenne par rapport au SSS <input id="p-moy" type="text" inputmode="decimal" placeholder="ex. +5,1"><small id="p-moy-aide"></small></label>
         <label>Code postal du domicile <input id="p-cp" type="text" inputmode="numeric" maxlength="5" placeholder="ex. 34270"><select id="p-commune" hidden></select><small id="p-cp-aide"></small></label>
         <label>Distance maximale <span class="p-unite"><input id="p-dist" type="number" min="0" max="2000" step="10" placeholder="ex. 300"> km</span><small>depuis ton domicile</small></label>
         <label>Circuit par défaut <select id="p-circuit">
@@ -1108,6 +1111,20 @@ const CIRCUITS = { jeunes: "Jeunes", gp: "Adultes", mid: "Mid-Amateurs", seniors
 const circuitLib = (t) => { const c = circuitDe(t);
   return CIRCUITS[c] + (c === "jeunes" && t.categorie ? " · " + t.categorie : c === "seniors" && t.type ? " · " + t.type : ""); };
 const circuitDe = (t) => t.circuit || "gp";
+// Mérites ffgolf, nommés et rangés comme les circuits (le Mérite National Amateur = circuit « Adultes »)
+const LISTES_M = { jeunes: "Jeunes", amateurs: "Adultes", midams: "Mid-Amateurs", seniors: "Seniors" };
+const LISTE_DU_CIRCUIT = { jeunes: "jeunes", gp: "amateurs", mid: "midams", seniors: "seniors" };
+// dernier mois relevé d'un Mérite (donnée ffgolf, relevée par le robot : lendemain du 1er jeudi et mercredi d'après)
+function dernierMerite(liste) {
+  return (Saison.stats?.mois || []).filter((m) => m.liste === liste).sort((a, b) => a.mois.localeCompare(b.mois)).at(-1) || null;
+}
+// moyenne vs SSS du joueur POUR UN TOURNOI : celle du Mérite du circuit du tournoi ; à défaut Mérite Adultes ;
+// à défaut celle lue au choix de la fiche (compte tout neuf, pas encore relevé). Décision du 06/11.
+function moyPour(t) {
+  for (const l of [LISTE_DU_CIRCUIT[circuitDe(t)], "amateurs"]) { const m = dernierMerite(l); if (m?.moy != null) return { moy: +m.moy, liste: l }; }
+  const fm = Saison.fiche?.merite;
+  return fm?.moy != null ? { moy: +fm.moy, liste: "amateurs" } : null;
+}
 // Éligibilité par l'âge (Vademecum ffgolf, voir MD_DOC/PLAN.md) : âge = année du tournoi − année de naissance.
 // Jeunes : jusqu'à 16 ans (U12 ≤ 12, U14 / Benjamins ≤ 14, U16 / Minimes ≤ 16) ; Adultes : tous ;
 // Mid-Amateurs : 25 ans et + ; Seniors : 50 / 60 / 70 ans et + selon la catégorie. Âge inconnu → pas de restriction.
@@ -1159,7 +1176,6 @@ async function charger() {
   majBadgeSaison();
   $("s-dom").value = Saison.domicile()?.nom || "";
   initCompte();
-  setTimeout(relireMerite, 1500);
   // #v=profil : le profil n'existe que connecté ; la session arrive un peu après, on y bascule à ce moment-là
   if ((h.get("v") === "profil" || h.get("v") === "stats") && Saison.mode !== "compte") etat.veutProfil = h.get("v");
   else if (h.get("v") === "saison" || h.get("v") === "profil") ecran(h.get("v"));
@@ -1224,7 +1240,7 @@ function initFiltres() {
     lsSet("gn-f-place", e.target.checked ? "1" : "");
     const f = Saison.fiche || {};
     if (e.target.checked && Saison.mode !== "compte") signaler("Connecte-toi et remplis « Mon profil » pour estimer ta place sur chaque tournoi.");
-    else if (e.target.checked && (!f.sexe || f.moy == null)) signaler("Renseigne ton sexe et ta moyenne par rapport au SSS dans « Mon profil » pour estimer ta place.");
+    else if (e.target.checked && (!f.sexe || !f.merite)) signaler("Renseigne ton sexe et choisis ta fiche Mérite dans « Mon profil » pour estimer ta place.");
     if (e.target.checked) await resultats();
     rendre();
   });
@@ -2284,7 +2300,6 @@ async function majSession1(session) {
   if (JSON.stringify([etat.ref, $("f-rayon").value, $("f-circuit").value]) !== avant || $("f-place").checked) rendre();
   toutRafraichir();
   if (etat.veutProfil) { const v = etat.veutProfil === "stats" ? "stats" : "profil"; etat.veutProfil = false; if (Saison.mode === "compte") ecran(v); }
-  relireMerite();
 }
 function initCompte() {
   rendreCompte();
@@ -2599,13 +2614,7 @@ async function majMerite(code, base = {}) {
   let periode = "";
   try { const L = await meriteListe(Saison.fiche.sexe || "H"); periode = L.ma_title || ""; } catch { /* sans titre */ }
   const merite = { code, ...base, ...f, periode, lu: AUJ };
-  Saison.setFiche({ merite, index: f.index ?? Saison.fiche.index, moy: f.moy ?? Saison.fiche.moy, moy6: f.moy6 ?? Saison.fiche.moy6 });
-}
-// relecture automatique au plus une fois par jour (nouveau Mérite le 1er jeudi du mois)
-async function relireMerite() {
-  const m = Saison.fiche.merite;
-  if (Saison.demo || !m || !m.code || (m.lu === AUJ && "placePrec" in m)) return;   // relue 1×/jour (ou si lue par l'ancien lecteur)
-  try { await majMerite(m.code, { nom: m.nom, prenom: m.prenom }); if (etat.ecran === "profil") rendreProfil(); } catch { /* hors ligne : on garde les valeurs */ }
+  Saison.setFiche({ merite, index: f.index ?? Saison.fiche.index });   // moyennes : par Mérite, dans merite (plus dans la fiche)
 }
 
 const rech2 = { resultats: null, en_cours: false, erreur: "" };
@@ -2632,18 +2641,27 @@ function rendreProfil() {
     $("p-titre").textContent = seul ? "Mon profil (coach)" : "Mon profil";
   }
   const an = new Date().getFullYear();
+  // une carte : nom et club, puis une section par Mérite où il figure (Jeunes, Adultes, Mid-Am, Seniors), d'après
+  // le relevé du robot ; compte tout neuf (pas encore relevé) : les valeurs Adultes lues au choix de la fiche
+  const secs = Object.keys(LISTES_M).map((l) => ({ l, d: dernierMerite(l) })).filter((x) => x.d);
+  if (!secs.length && m) secs.push({ l: "amateurs", d: { place: m.place, place_prec: m.placePrec, meilleure: m.meilleure, moy: m.moy, moy6: m.moy6, nb: m.nb, divisor: m.divisor,
+    index_golf: m.index, statut: m.statut, categorie: m.categorie, lu_le: m.lu } });
+  const comm = secs.map((x) => x.d).find((d) => d.categorie || d.statut) || {}, lu = secs.map((x) => x.d.lu_le).filter(Boolean).sort().at(-1);
+  const idx = secs.map((x) => x.d.index_golf).find((x) => x != null);
   $("p-merite").innerHTML = m ? `
     <div class="p-carte">
       <div class="p-nom"><b>${esc(m.prenom || "")} ${esc(m.nom || "")}</b><span>${esc(titre(m.golf || ""))}</span></div>
+      <div class="meta">${esc(comm.categorie || m.categorie || "")} · ${esc(comm.statut || m.statut || "")} · index <b>${idx != null ? (+idx).toLocaleString("fr-FR") : "—"}</b></div>
+      ${secs.map(({ l, d }) => `<h4 class="p-merite-titre">Mérite ${LISTES_M[l]}${d.mois ? ` <small>${moisLib(d.mois)}</small>` : ""}</h4>
       <div class="p-chiffres">
-        <div><b>${m.place != null ? `${m.place}<small>e</small>` : "NC"}</b><span>${m.place == null ? "non classé ce mois · " : ""}au Mérite${m.placePrec ? ` (${m.placePrec}<small>e</small> le mois d'avant)` : ""}${m.meilleure ? ` · meilleure : ${m.meilleure}<small>e</small>` : ""}</span></div>
-        <div><b>${signe(m.moy)}</b><span>moyenne vs SSS (12 mois)</span></div>
-        <div><b>${signe(m.moy6)}</b><span>moyenne vs SSS (6 mois)</span></div>
-        <div><b>${m.index != null ? m.index.toLocaleString("fr-FR") : "—"}</b><span>index</span></div>
-        <div><b>${m.nb ?? "—"} / ${m.divisor ?? "—"}</b><span>tournois / diviseur</span></div>
-      </div>
-      <div class="meta">${esc(m.categorie || "")} · ${esc(m.statut || "")} · ${esc(m.periode || "")} · lu le ${fmtDate(m.lu)}
-        · <button type="button" class="lien" id="p-relire">Actualiser</button> ${Saison.licence?.verif === "ok" ? `· <span title="Licence reconnue dans les résultats : joueur verrouillé">🔒 joueur vérifié par la licence</span>` : `· <button type="button" class="lien" id="p-oublier">Ce n'est pas moi</button>`}</div>
+        <div><b>${d.place != null ? `${d.place}<small>e</small>` : "NC"}</b><span>${d.place == null ? "non classé · " : ""}au Mérite${d.place_prec ? ` (${d.place_prec}<small>e</small> le mois d'avant)` : ""}${d.meilleure ? ` · meilleure : ${d.meilleure}<small>e</small>` : ""}</span></div>
+        <div><b>${signe(d.moy == null ? null : +d.moy)}</b><span>moyenne vs SSS (12 mois)</span></div>
+        <div><b>${signe(d.moy6 == null ? null : +d.moy6)}</b><span>moyenne vs SSS (6 mois)</span></div>
+        <div><b>${d.nb ?? "—"} / ${d.divisor ?? "—"}</b><span>tournois / diviseur</span></div>
+      </div>`).join("")}
+      <div class="meta">Relevé ${lu ? `le ${fmtDate(String(lu).slice(0, 10))}` : "pas encore fait"} · mis à jour le lendemain de chaque parution du Mérite
+        ${Saison.demo ? "" : `· <button type="button" class="lien" id="p-releve">Mettre à jour maintenant</button>`}
+        ${Saison.licence?.verif === "ok" ? `· <span title="Licence reconnue dans les résultats : joueur verrouillé">🔒 joueur vérifié par la licence</span>` : `· <button type="button" class="lien" id="p-oublier">Ce n'est pas moi</button>`}</div>
     </div>` : `
     <p>Retrouve ta fiche du <b>Mérite National Amateur</b> : GolfNexus y lira ton index et ta <b>moyenne par rapport au SSS</b>, et les relira chaque mois.</p>
     <form id="p-cherche-f" class="c-form">
@@ -2654,11 +2672,11 @@ function rendreProfil() {
     <div id="p-resultats" class="p-resultats">${rech2.en_cours ? "<p>Lecture du Mérite (≈ 2,5 Mo)…</p>" : rech2.erreur ? `<p>${esc(rech2.erreur)}</p>` :
       rech2.resultats ? (rech2.resultats.length ? rech2.resultats.map((x, i) => `<button type="button" class="p-res" data-i="${i}">
         <b>${esc(x.NOM)} ${esc(x.PRENOM)}</b><span>${esc(x.CATEGORIE || "")} · ${esc(titre(x.GOLF || ""))} · ${/^\d+$/.test(String(x.RANK)) ? x.RANK + "e" : "non classé"} · moyenne ${signe(nombre(x.MOY_SSS))}</span></button>`).join("")
-        : "<p>Personne de ce nom au Mérite de ce mois. Seuls les joueurs classés y figurent : remplis ta moyenne à la main ci-dessous.</p>") : ""}</div>`;
+        : "<p>Personne de ce nom au Mérite de ce mois. Seuls les joueurs qui ont joué des tournois comptés au Mérite y figurent.</p>") : ""}</div>`;
   // champs saisis
   const v = (id, x) => { const el = $(id); if (document.activeElement !== el) el.value = x ?? ""; };
   v("p-nom", f.nom); v("p-club", f.club); v("p-sexe", f.sexe); v("p-naissance", f.naissance); v("p-index", f.index == null ? "" : String(f.index).replace(".", ","));
-  v("p-moy", f.moy == null ? "" : signe(f.moy)); v("p-dist", f.distMax);
+  v("p-dist", f.distMax);
   { // licence : compte seulement ; fixée à l'invitation (ou saisie une seule fois pour un compte ancien), puis non
     // modifiable par le joueur — seul l'administrateur la corrige (imposé par la base, 06/11)
     const lic = Saison.licence || {}, compteOk = Saison.mode === "compte";
@@ -2687,11 +2705,12 @@ function rendreProfil() {
   $("p-cp-aide").textContent = L && !L.length ? "Code postal inconnu." : dom ? "Domicile : " + dom.nom : "Sert à calculer les distances jusqu'aux golfs.";
   $("p-categorie").textContent = f.naissance ? `${categorieAge(f.naissance, an)} en ${an}` : "";
   // donnée renvoyée par la ffgolf (fiche Mérite, relue chaque jour) : affichée, non modifiable ; saisie à la main seulement sans elle
-  const ffgMoy = m?.moy != null, ffgIdx = m?.index != null;
-  $("p-moy").disabled = ffgMoy; $("p-index").disabled = ffgIdx;
-  $("p-moy-aide").textContent = ffgMoy ? "Donnée ffgolf (ta fiche Mérite, 12 mois glissants), mise à jour automatiquement."
-    : "Ta moyenne de score par tour, par rapport au SSS (ex. +5,1) : pas de valeur ffgolf, saisis-la à la main.";
-  $("p-index-aide").textContent = ffgIdx ? "Donnée ffgolf (ta fiche Mérite), mise à jour automatiquement." : "";
+  // index : donnée ffgolf (fiche Mérite) → affichée, non modifiable ; saisie à la main seulement sans elle.
+  // Plus de moyenne vs SSS dans la fiche (06/11) : elle dépend du circuit → une par Mérite, dans la carte ci-dessus
+  const idxFfg = [...Object.keys(LISTES_M).map((l) => dernierMerite(l)?.index_golf), m?.index].find((x) => x != null);
+  $("p-index").disabled = idxFfg != null;
+  if (idxFfg != null) v("p-index", String(idxFfg).replace(".", ","));
+  $("p-index-aide").textContent = idxFfg != null ? "Donnée ffgolf (ta fiche Mérite), mise à jour automatiquement." : "";
 }
 $("ecran-profil").addEventListener("submit", async (e) => {
   if (e.target.id !== "p-cherche-f") return;
@@ -2714,16 +2733,12 @@ $("ecran-profil").addEventListener("click", async (e) => {
     try {
       Saison.setFiche({ sexe: rech2.sexe, nom: Saison.fiche.nom || titre(`${x.PRENOM} ${x.NOM}`), club: Saison.fiche.club || titre(x.GOLF || "") });
       await majMerite(x.CODE, { nom: x.NOM, prenom: x.PRENOM });
-      rech2.resultats = null; signaler("Fiche Mérite reliée : ton index et ta moyenne sont remplis.");
+      rech2.resultats = null; signaler("Fiche Mérite reliée : tes autres Mérites (Jeunes, Mid-Am, Seniors) arrivent avec le relevé.");
       lancerReleve(true);   // historique Mérite et places obtenues sans attendre lundi
     } catch (err) { signaler("Lecture de la fiche impossible : " + (err.message || err)); }
     rendreProfil(); return;
   }
-  if (e.target.id === "p-relire") {
-    const m = Saison.fiche.merite;
-    try { await majMerite(m.code, { nom: m.nom, prenom: m.prenom }); signaler("Fiche Mérite relue."); } catch (err) { signaler("Lecture impossible : " + (err.message || err)); }
-    rendreProfil();
-  }
+  if (e.target.id === "p-releve") lancerReleve();
   if (e.target.id === "p-oublier") { Saison.setFiche({ merite: null }); rendreProfil(); }
 });
 // communes d'un code postal (geo.api.gouv.fr, CORS ouvert) ; cache de la session
@@ -2773,7 +2788,7 @@ $("p-form").addEventListener("change", async (e) => {
   if (id === "p-dist-auto") { Saison.setFiche({ distAuto: e.target.checked }); distanceDuProfil(true); rendre(); rendreProfil(); return; }
   if (id === "p-commune") { const cp = Saison.fiche.cp, c = communesCP[cp]?.[+val]; if (c) domicileDe(c, cp); rendreProfil(); return; }
   const champ = { "p-nom": ["nom", (x) => x.slice(0, 60)], "p-club": ["club", (x) => x.slice(0, 60)], "p-sexe": ["sexe", (x) => x],
-    "p-naissance": ["naissance", (x) => parseInt(x) || null], "p-index": ["index", nombre], "p-moy": ["moy", nombre], "p-dist": ["distMax", (x) => parseInt(x) || null] }[id];
+    "p-naissance": ["naissance", (x) => parseInt(x) || null], "p-index": ["index", nombre], "p-dist": ["distMax", (x) => parseInt(x) || null] }[id];
   if (!champ) return;
   Saison.setFiche({ [champ[0]]: champ[1](val) });
   if (id === "p-dist" || id === "p-naissance") { distanceDuProfil(true); rendre(); }
@@ -2787,8 +2802,9 @@ $("p-form").addEventListener("submit", (e) => e.preventDefault());
 // de tournoi de préférence, sinon même golf). Les joueurs coupés (moins de tours) sont classés après les autres.
 function estimePlace(t) {
   const f = Saison.fiche || {}, res = etat.resultats;
-  if (!res || !f.sexe || f.moy == null) return null;
-  const cle = `${f.sexe}|${f.moy}`;
+  const mp = moyPour(t);
+  if (!res || !f.sexe || !mp) return null;
+  const cle = `${f.sexe}|${Object.keys(CIRCUITS).map((c) => moyPour({ circuit: c })?.moy).join()}`;
   if (etat.places?.cle !== cle) etat.places = { cle, m: new Map() };
   if (etat.places.m.has(t.id)) return etat.places.m.get(t.id);
   let r = null;
@@ -2805,10 +2821,10 @@ function estimePlace(t) {
       const nt = Math.max(0, ...cl.map((l) => l.tours.length)); if (!nt) continue;
       const complets = cl.filter((l) => l.tours.length === nt).map((l) => l.tours.reduce((a, b) => a + b, 0)).sort((a, b) => a - b);
       if (complets.length < 5) continue;
-      const parTour = Math.ceil(sss + f.moy), total = parTour * nt;
+      const parTour = Math.ceil(sss + mp.moy), total = parTour * nt;
       const place = 1 + complets.filter((x) => x < total).length;
       r = { place, n: cl.length, complets: complets.length, cut: place > complets.length && cl.length > complets.length,
-        moitie: Math.ceil(cl.length / 2), parTour, total, nt, sss, annee: e.annee, memeNom: memeNom.includes(e) };
+        moitie: Math.ceil(cl.length / 2), parTour, total, nt, sss, annee: e.annee, memeNom: memeNom.includes(e), moy: mp.moy, liste: mp.liste };
       break;
     }
   }
@@ -2821,19 +2837,19 @@ function tagPlace(t) {
   if ((sx === "H" && /^(Dames|Femme)$/.test(t.sexe)) || (sx === "D" && /^(Messieurs|Homme)$/.test(t.sexe))) return "";
   if (!ageOk(t)) return `<span class="tag" title="Ce circuit n'est pas ouvert à ton âge">pas pour ton âge</span>`;
   const r = estimePlace(t);
-  if (!r) return (Saison.fiche || {}).moy == null ? "" : `<span class="tag" title="Pas d'édition passée exploitable sur ce golf">place : ?</span>`;
-  const bulle = `Estimation : SSS ${String(r.sss).replace(".", ",")} ${signe(Saison.fiche.moy)} → ${r.parTour} par tour × ${r.nt} tours = ${r.total}, ` +
+  if (!r) return !moyPour(t) ? "" : `<span class="tag" title="Pas d'édition passée exploitable sur ce golf">place : ?</span>`;
+  const bulle = `Estimation : SSS ${String(r.sss).replace(".", ",")} ${signe(r.moy)} (ta moyenne Mérite ${LISTES_M[r.liste]}) → ${r.parTour} par tour × ${r.nt} tours = ${r.total}, ` +
     `comparé à l'édition ${r.annee}${r.memeNom ? "" : " d'un autre tournoi sur ce golf"} (${r.n} classés)`;
   return `<span class="tag place ${r.place <= r.moitie && !r.cut ? "bon" : "mal"}" title="${esc(bulle)}">${r.cut ? "cut probable" : `≈ ${r.place}<small>e</small> / ${r.n}`}</span>`;
 }
 function blocPlaceProbable(t, g, res, editions) {
-  const f = Saison.fiche, sexe = f.sexe, moy = f.moy;
+  const f = Saison.fiche, sexe = f.sexe, mp = moyPour(t), moy = mp?.moy;
   if (!g.slug || !editions.length) return "";
   if (Saison.mode !== "compte") return `<h3>Ta place probable</h3><div class="bloc vide"><button type="button" class="lien" data-connexion>Connecte-toi</button>
     et remplis ton profil : GolfNexus estimera ta place sur ce tournoi d'après les éditions passées.</div>`;
   if (!ageOk(t)) return `<h3>Ta place probable</h3><div class="bloc vide">Ce tournoi (${esc(circuitLib(t))}) n'est pas ouvert à ton âge : pas d'estimation.</div>`;
-  if (!sexe || moy == null) return `<h3>Ta place probable</h3><div class="bloc vide">Indique ton sexe et ta <b>moyenne par rapport au SSS</b>
-    dans <button type="button" class="lien" data-ecran-profil>Mon profil</button> : GolfNexus estimera ta place sur ce tournoi d'après les éditions passées.</div>`;
+  if (!sexe || moy == null) return `<h3>Ta place probable</h3><div class="bloc vide">Indique ton sexe et choisis ta <b>fiche Mérite</b>
+    dans <button type="button" class="lien" data-ecran-profil>Mon profil</button> : GolfNexus estimera ta place sur ce tournoi d'après les éditions passées (avec ta moyenne par rapport au SSS de ce circuit).</div>`;
   const s = sexe === "D" ? "F" : "M";
   editions = editions.filter((e) => circuitDe(e) === circuitDe(t));
   const memeNom = editions.filter((e) => plier(e.nom) === plier(t.nom));
@@ -2853,7 +2869,7 @@ function blocPlaceProbable(t, g, res, editions) {
   const dernier = lignes[0], dedans = dernier.place <= dernier.moitie;
   return `<h3>Ta place probable</h3>
     <div class="bloc place-prob ${dedans ? "ok" : "ko"}">
-      <p>En jouant ta moyenne (<b>${signe(moy)}</b> par tour au-dessus du SSS), tu aurais fini environ
+      <p>En jouant ta moyenne du Mérite ${LISTES_M[mp.liste]} (<b>${signe(moy)}</b> par tour au-dessus du SSS), tu aurais fini environ
         ${lignes.map((l) => `<b>${l.place}<small>e</small> sur ${l.n}</b> en ${l.e.annee}`).join(", ")}
         → ${dedans ? "<b>dans les 50 %</b> : des points au Mérite" : "<b>hors des 50 %</b> : pas de points au Mérite, et un tournoi de plus au diviseur"}.</p>
       <div class="defile"><table><thead><tr><th>Édition</th><th class="n">Classés</th><th class="n">Ta place</th><th class="n">10e</th><th class="n">20e</th><th class="n">30e</th><th class="n">Ligne des 50 %</th></tr></thead><tbody>
@@ -2868,9 +2884,6 @@ document.addEventListener("click", (e) => { if (e.target.closest("[data-ecran-pr
 // Données du joueur seulement : historique Mérite mensuel + tournois comptés (merite_mois / merite_tournois),
 // places obtenues et trou par trou des GP (resultats_perso). Graphiques en SVG maison : traits 2 px, marqueurs
 // ≥ 8 px avec anneau, grille fine, info-bulle au survol, couleurs validées (clair et sombre, daltonisme).
-// Mérites ffgolf, nommés et rangés comme les circuits (le Mérite National Amateur = circuit « Adultes »)
-const LISTES_M = { jeunes: "Jeunes", amateurs: "Adultes", midams: "Mid-Amateurs", seniors: "Seniors" };
-const LISTE_DU_CIRCUIT = { jeunes: "jeunes", gp: "amateurs", mid: "midams", seniors: "seniors" };
 const st = { circuit: null, liste: null };
 const moyenne = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 const ecartType = (a) => { const m = moyenne(a); return a.length > 1 ? Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)) : null; };
