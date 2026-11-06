@@ -3023,19 +3023,32 @@ function graduations(min, max, n = 4) {
   return t;
 }
 // courbe(s) dans le temps ; series = [{ nom, cls, pts: [{ x: étiquette, y, tip }] }] (mêmes x pour toutes)
-function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero = false, W = 1040, plancher = null }) {
+// temps : chaque point porte t (date ISO) → abscisse proportionnelle à la date (même place quel que soit le nombre de points)
+// etendue : [min, max] à inclure dans l'échelle (échelle stable d'un affichage à l'autre)
+function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero = false, W = 1040, plancher = null, temps = false, etendue = null }) {
   const g = 44, d = 64, hautM = 14, basM = 26, xs = series[0].pts.map((p) => p.x), n = xs.length;
   const ys = series.flatMap((s) => s.pts.map((p) => p.y)).filter((v) => v != null);
   if (!ys.length) return "";
-  const t = graduations(Math.min(...ys, ...(zero ? [0] : []), ...(plancher != null ? [plancher] : [])), Math.max(...ys, ...(zero ? [0] : []))), lo = t[0], hi = t.at(-1);
-  const X = (i) => g + (n === 1 ? (W - g - d) / 2 : (i * (W - g - d)) / (n - 1));
+  const t = graduations(Math.min(...ys, ...(zero ? [0] : []), ...(plancher != null ? [plancher] : []), ...(etendue ? [etendue[0]] : [])),
+    Math.max(...ys, ...(zero ? [0] : []), ...(etendue ? [etendue[1]] : []))), lo = t[0], hi = t.at(-1);
+  const ms = (iso) => new Date(iso + "T12:00:00").getTime();
+  const ts = temps ? series[0].pts.map((p) => ms(p.t)) : null, t0 = temps ? Math.min(...ts) : 0, t1 = temps ? Math.max(...ts) : 0;
+  const Xt = (v) => g + (t1 === t0 ? (W - g - d) / 2 : ((v - t0) * (W - g - d)) / (t1 - t0));
+  const X = (i) => (temps ? Xt(ts[i]) : g + (n === 1 ? (W - g - d) / 2 : (i * (W - g - d)) / (n - 1)));
   const Y = (v) => { const r = (v - lo) / (hi - lo || 1); return hautM + (inverse ? r : 1 - r) * (h - hautM - basM); };
   const pasX = Math.max(1, Math.ceil(n / Math.max(4, Math.floor(W / 90))));
   let o = `<svg class="st-svg" viewBox="0 0 ${W} ${h}" width="${W}" height="${h}" role="img">`;
   for (const v of t) o += `<line class="st-grille" x1="${g}" x2="${W - d}" y1="${Y(v)}" y2="${Y(v)}"/><text class="st-axe" x="${g - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
+  if (temps) {   // axe du temps : un repère au 1er de chaque mois, espacés régulièrement (pas de 1, 2, 3, 6 mois)
+    const d0 = new Date(t0), d1 = new Date(t1), nbM = (d1.getFullYear() - d0.getFullYear()) * 12 + d1.getMonth() - d0.getMonth() + 1;
+    const pas = [1, 2, 3, 6, 12].find((p) => nbM / p <= Math.max(3, Math.floor(W / 95))) || 12;
+    for (let k = 1; k <= nbM; k++) { const m = new Date(d0.getFullYear(), d0.getMonth() + k, 1); if (m.getTime() > t1) break; if ((m.getMonth()) % pas) continue;
+      const x = Xt(m.getTime()); o += `<line class="st-grille" x1="${x}" x2="${x}" y1="${h - basM}" y2="${h - basM + 4}"/><text class="st-axe" x="${x}" y="${h - 8}" text-anchor="middle">${MOIS_COURT[m.getMonth()]} ${String(m.getFullYear()).slice(2)}</text>`; }
+  } else {
   // étiquettes de l'axe : une sur pasX, jamais deux fois le même mois de suite
   let dernierLib = null;
   xs.forEach((x, i) => { if (((i % pasX === 0 && n - 1 - i >= pasX / 2) || i === n - 1) && x !== dernierLib) { o += `<text class="st-axe" x="${X(i)}" y="${h - 8}" text-anchor="middle">${esc(x)}</text>`; dernierLib = x; } });
+  }
   // étiquettes de fin de courbe : placées ensemble, au moins 13 px d'écart (sinon « +6,3 12 m » et « 6 m » se chevauchent)
   const finY = new Map(), fins = series.filter((s) => !s.points).map((s) => { const q = s.pts.map((p, i) => (p.y == null ? null : Y(p.y))).filter((v) => v != null).at(-1); return { s, y: q }; })
     .filter((f) => f.y != null).sort((a, b) => a.y - b.y);
@@ -3043,7 +3056,7 @@ function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero 
   const deb = fins.length ? Math.max(0, fins.at(-1).ty - (h - basM)) : 0;   // tout remonter si on sort du cadre
   for (const f of fins) finY.set(f.s, f.ty - deb);
   for (const s of series) {
-    const pts = s.pts.map((p, i) => (p.y == null ? null : [X(i), Y(p.y), p])).filter(Boolean);
+    const pts = s.pts.map((p, i) => (p.y == null ? null : [temps ? Xt(ms(p.t)) : X(i), Y(p.y), p])).filter(Boolean);
     if (!pts.length) continue;
     if (s.points) { for (const [x, y] of pts) o += `<circle class="st-tour ${s.cls}" cx="${x}" cy="${y}" r="4"/>`; continue; }   // un point par tour, sans trait
     o += `<path class="st-l ${s.cls}" d="${pts.map((q, i) => (i ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1)).join(" ")}"/>`;
@@ -3054,7 +3067,8 @@ function svgLignes({ series, inverse = false, fmt = (v) => fx(v), h = 190, zero 
   // zones de survol (une par mois, toutes séries)
   xs.forEach((x, i) => {
     const tip = `<b>${esc(x)}</b>` + series.map((s) => s.pts[i]?.y != null ? `<br>${esc(s.nom)} : ${s.pts[i].tip ?? fmt(s.pts[i].y)}` : "").join("");
-    o += `<rect class="st-hit" x="${X(i) - Math.max(8, (W - g - d) / n / 2)}" y="0" width="${Math.max(16, (W - g - d) / n)}" height="${h - basM}" data-tip="${esc(tip)}"/>`;
+    const lg = temps ? 14 : Math.max(16, (W - g - d) / n);
+    o += `<rect class="st-hit" x="${X(i) - lg / 2}" y="0" width="${lg}" height="${h - basM}" data-tip="${esc(tip)}"/>`;
   });
   return o + "</svg>";
 }
@@ -3183,18 +3197,23 @@ function rendreStats() {
   if (tours.length) {
     // interrupteurs (06/11) : « Chaque tour » (sinon UN point par tournoi = moyenne de ses tours, plus lisible)
     // et « Tout l'historique » (sinon 12 mois, comme le reste de Mes stats)
-    const T_ = st.toutHisto ? tours : tours12, xl = (d) => moisLib(d.slice(0, 4) + d.slice(5, 7));
-    const fen = 5, glis = T_.map((x, i) => moyenne(T_.slice(Math.max(0, i - fen + 1), i + 1).map((y) => y.d)));
+    // moyenne glissante calculée sur TOUT l'historique, puis seulement affichée sur la période (pas de redémarrage)
+    const fen = 5, glis = tours.map((x, i) => moyenne(tours.slice(Math.max(0, i - fen + 1), i + 1).map((y) => y.d)));
+    const debut = st.toutHisto ? "" : il12, idx = tours.map((x, i) => i).filter((i) => tours[i].date >= debut), T_ = idx.map((i) => tours[i]);
+    // les tours d'un même tournoi : un jour d'écart chacun sur l'axe du temps (pas empilés)
+    const jour = (x) => { const dt = new Date(x.date + "T12:00:00"); dt.setDate(dt.getDate() + x.n - 1); return dt.toISOString().slice(0, 10); };
     let ptsPoints, ptsCourbe;
     if (st.chaqueTour) {
-      ptsPoints = T_.map((x) => ({ x: xl(x.date), y: +x.d.toFixed(1), tip: `${x.score} (${sg(x.d)}), tour ${x.n} de « ${esc(titre(x.nom))} »${x.src === "repère" ? " · SSS du repère (absent du Mérite)" : ""}` }));
-      ptsCourbe = T_.map((x, i) => ({ x: xl(x.date), y: +glis[i].toFixed(2), tip: sg(glis[i]) }));
+      ptsPoints = idx.map((i) => { const x = tours[i]; return { t: jour(x), x: "", y: +x.d.toFixed(1), tip: `${x.score} (${sg(x.d)}), tour ${x.n} de « ${esc(titre(x.nom))} », ${fmtDate(x.date)}${x.src === "repère" ? " · SSS du repère (absent du Mérite)" : ""}` }; });
+      ptsCourbe = idx.map((i) => ({ t: jour(tours[i]), x: "", y: +glis[i].toFixed(2), tip: `moyenne des 5 derniers tours : ${sg(glis[i])}` }));
     } else {
       const grp = [];
-      T_.forEach((x, i) => { const k = x.date + "|" + x.nom; let g = grp.at(-1); if (!g || g.k !== k) grp.push((g = { k, date: x.date, nom: x.nom, ds: [], sc: [] })); g.ds.push(x.d); g.sc.push(x.score); g.der = i; });
-      ptsPoints = grp.map((g) => ({ x: xl(g.date), y: +moyenne(g.ds).toFixed(1), tip: `« ${esc(titre(g.nom))} » : ${g.sc.join(" · ")} — ${sg(moyenne(g.ds))} par tour en moyenne` }));
-      ptsCourbe = grp.map((g) => ({ x: xl(g.date), y: +glis[g.der].toFixed(2), tip: sg(glis[g.der]) }));
+      idx.forEach((i) => { const x = tours[i], k = x.date + "|" + x.nom; let gr = grp.at(-1); if (!gr || gr.k !== k) grp.push((gr = { k, date: x.date, nom: x.nom, ds: [], sc: [] })); gr.ds.push(x.d); gr.sc.push(x.score); gr.der = i; gr.t = jour(x); });
+      ptsPoints = grp.map((gr) => ({ t: gr.t, x: "", y: +moyenne(gr.ds).toFixed(1), tip: `« ${esc(titre(gr.nom))} », ${fmtDate(gr.date)} : ${gr.sc.join(" · ")} — ${sg(moyenne(gr.ds))} par tour en moyenne` }));
+      ptsCourbe = grp.map((gr) => ({ t: gr.t, x: "", y: +glis[gr.der].toFixed(2), tip: `moyenne des 5 derniers tours : ${sg(glis[gr.der])}` }));
     }
+    // échelle commune aux deux affichages : bornée par TOUS les tours de la période
+    const dsP = T_.map((x) => x.d), etendue = dsP.length ? [Math.min(...dsP), Math.max(...dsP)] : null;
     const parN = [1, 2, 3, 4].map((n) => ({ n, v: moyenne(tours12.filter((x) => x.n === n).map((x) => x.d)), c: tours12.filter((x) => x.n === n).length })).filter((x) => x.c);
     const meil = tours12.length ? tours12.reduce((a, b) => (b.d < a.d ? b : a)) : null, pire = tours12.length ? tours12.reduce((a, b) => (b.d > a.d ? b : a)) : null;
     const opt = (k, lib) => `<label class="bascule petite"><input type="checkbox" data-st-opt="${k}" ${st[k] ? "checked" : ""}><span class="piste" aria-hidden="true"></span>${lib}</label>`;
@@ -3204,9 +3223,9 @@ function rendreStats() {
       ${svgLignes({ series: [
         { nom: st.chaqueTour ? "Tour" : "Tournoi", cls: "c2", points: true, pts: ptsPoints },
         { nom: "Moyenne 5 tours", cls: "c1", pts: ptsCourbe }],
-        fmt: (v) => sg(v), zero: true, h: 240, W: st.l1,
+        fmt: (v) => sg(v), zero: true, h: 240, W: st.l1, temps: true, etendue,
         // l'axe descend au moins à −5 (et jusqu'à −12 au plus) : les tours sous le SSS doivent se voir
-        plancher: Math.max(-12, Math.min(-5, Math.floor(Math.min(...ptsPoints.map((x) => x.y))) - 1)) })}`
+        plancher: Math.max(-12, Math.min(-5, Math.floor(Math.min(...dsP)) - 1)) })}`
       : `<p class="meta">Aucun tour relevé sur les 12 derniers mois : active « Tout l'historique ».</p>`}
       <div class="st-duo">
         <div><h4>Selon le tour de l'épreuve <small>(12 mois)</small></h4>
