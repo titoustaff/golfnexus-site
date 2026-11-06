@@ -928,6 +928,19 @@ body.assistant-ouvert { overflow: hidden; }
   .bandeau-in { grid-template-columns: minmax(0, 1fr) auto; }
   .bandeau-in .vues { min-width: 0; max-width: 100%; }
 }
+/* page « Tes données personnelles » (RGPD) : par-dessus l'accueil */
+.fiche.rgpd { z-index: 3500; }
+.rgpd ul { margin: 0 0 8px 18px; padding: 0; } .rgpd li { margin: 3px 0; }
+.rgpd p { margin: 0 0 8px; }
+.rgpd-t { width: 100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 10px; }
+.rgpd-t th, .rgpd-t td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--bord); }
+.rgpd-t thead th { background: var(--sauge-pale); font-size: 12px; color: var(--vert); }
+.a-pied .a-rgpd { color: #fff; text-decoration: underline; font: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+.rgpd-t { table-layout: fixed; }
+.rgpd-t th:nth-child(1), .rgpd-t td:nth-child(1) { width: 40%; }
+.rgpd-t td { overflow-wrap: anywhere; }
+@media (max-width: 560px) { .rgpd-t { font-size: 12px; } .rgpd-t th, .rgpd-t td { padding: 5px 4px; } }
+.rgpd .rgpd-t th, .rgpd .rgpd-t td { white-space: normal !important; }
 
 </style>
 </head>
@@ -963,7 +976,7 @@ body.assistant-ouvert { overflow: hidden; }
         </div>
       </div>
     </div>
-    <p class="a-pied">Données ffgolf.org · résultats des autres joueurs anonymisés · tes données restent dans ton compte</p>
+    <p class="a-pied">Données ffgolf.org · résultats des autres joueurs anonymisés · tes données restent dans ton compte · <button type="button" class="lien a-rgpd" data-rgpd>Tes données personnelles</button></p>
   </section>
 
   <header class="bandeau">
@@ -1177,7 +1190,7 @@ body.assistant-ouvert { overflow: hidden; }
         <div class="p-bascule"><label class="bascule petite"><input id="p-dist-auto" type="checkbox"><span class="piste" aria-hidden="true"></span>Appliquer cette distance à la carte et à la liste à chaque ouverture</label>
           <small>Tu peux toujours la changer ou l'enlever sur la carte : elle reviendra à la prochaine ouverture.</small></div>
       </div>
-      <p class="meta">Ta fiche est enregistrée dans ton compte. Avec tes Mérites, elle sert à estimer ta <b>place probable</b> sur chaque tournoi.</p>
+      <p class="meta">Ta fiche est enregistrée dans ton compte. Avec tes Mérites, elle sert à estimer ta <b>place probable</b> sur chaque tournoi. <button type="button" class="lien" data-rgpd>Tes données personnelles : ce qui est enregistré, qui le voit, tes droits</button></p>
     </form>
     </div>
     <div class="p-col p-col-d">
@@ -1202,8 +1215,75 @@ body.assistant-ouvert { overflow: hidden; }
     </div>
   </div>
 
+
+  <!-- Données personnelles (RGPD) — 06/11. RÈGLE : ce texte doit TOUJOURS décrire ce que fait vraiment GolfNexus.
+       Toute évolution qui touche aux données personnelles le met à jour dans le même commit (MD_DOC/PLAN.md). -->
+  <div id="rgpd" class="fiche rgpd" hidden>
+    <div class="fiche-boite" role="dialog" aria-modal="true" aria-labelledby="rgpd-titre">
+      <button class="fermer" id="rgpd-fermer" aria-label="Fermer">×</button>
+      <h2 id="rgpd-titre">Tes données personnelles</h2>
+      <p class="sous">Ce que GolfNexus enregistre, pourquoi, qui le voit, et tes droits. Mise à jour : 6 novembre 2026.</p>
+
+      <h3>En bref</h3>
+      <ul>
+        <li>GolfNexus est un <b>projet personnel, non commercial</b> : pas de publicité, pas de mesure d'audience, aucune donnée vendue ni partagée à des fins commerciales.</li>
+        <li>On entre <b>sur invitation</b>. Tes données restent <b>dans ton compte</b> : personne d'autre ne les voit, sauf un coach que <b>tu as accepté</b> (et seulement en lecture).</li>
+        <li>Les résultats des tournois sont ceux, publics, de la ffgolf, <b>sans aucun nom</b> : seule <b>ta</b> ligne est reliée à ton compte, grâce à ta licence.</li>
+      </ul>
+
+      <h3>Qui est responsable</h3>
+      <p>L'administrateur de GolfNexus. Contact : <a href="mailto:golfnexus@sportsdatabucket.fr">golfnexus@sportsdatabucket.fr</a>.</p>
+
+      <h3>Ce qui est enregistré dans ton compte</h3>
+      <table class="rgpd-t"><thead><tr><th>Donnée</th><th>D'où elle vient</th><th>À quoi elle sert</th></tr></thead><tbody>
+        <tr><td>Adresse e-mail, mot de passe (chiffré, jamais visible), dates de connexion</td><td>l'invitation, toi</td><td>te connecter, t'envoyer les liens et les rappels que tu as demandés</td></tr>
+        <tr><td>Nom affiché, sexe, année de naissance, index</td><td>toi, ta fiche Mérite</td><td>catégorie d'âge, tournois auxquels tu as droit, estimation de ta place</td></tr>
+        <tr><td>Commune du domicile (code postal) et sa position, distance maximale</td><td>toi</td><td>distances jusqu'aux golfs ; jamais ton adresse</td></tr>
+        <tr><td>N° de licence ffgolf et club de licence</td><td>l'invitation, la ffgolf</td><td>retrouver <b>tes</b> résultats ; reconnaître ton club</td></tr>
+        <tr><td>Ta fiche Mérite (places, moyennes par rapport au SSS, tournois comptés, points) mois par mois</td><td>ffgolf (pages publiques)</td><td>« Mon profil », « Mes stats », ta place probable</td></tr>
+        <tr><td>Ta ligne dans les résultats des tournois que tu as joués (place, scores, trou par trou)</td><td>ffgolf (pages publiques), par ta licence</td><td>« Ma saison », « Mes stats », cartes de score</td></tr>
+        <tr><td>Ta saison (tournois choisis, statut, notes) et tes préférences (rappels, circuit…)</td><td>toi</td><td>planifier ta saison, t'envoyer les rappels demandés</td></tr>
+        <tr><td>Coachs et club qui te suivent, tes équipes</td><td>tes acceptations, les coachs</td><td>le suivi par ton club ou ton coach</td></tr>
+        <tr><td>Rôle (joueur, coach, admin), compte d'un mineur, validation parentale</td><td>l'invitation, le parent</td><td>droits d'accès et protection des mineurs</td></tr>
+      </tbody></table>
+
+      <h3>Les résultats des autres joueurs</h3>
+      <p>Les classements des tournois sont conservés <b>sans nom, sans licence, sans club et sans index</b> des joueurs : seulement les places et les scores. Les noms sont retirés dès la lecture, avant tout enregistrement. Pour te retrouver, la liste du Mérite (nominative, publique sur ffgolf.org) est lue <b>une fois, dans ton navigateur</b> : rien d'autre que <b>ta</b> ligne n'est gardé. Ensuite, un robot relit seulement <b>ta</b> fiche après chaque parution du Mérite (il parcourt la liste pour y retrouver ta ligne, sans rien garder d'autre) et <b>tes</b> résultats chaque lundi.</p>
+
+      <h3>Qui voit tes données</h3>
+      <ul>
+        <li><b>Toi</b> (ou ton parent, qui tient le compte d'un joueur de moins de 18 ans).</li>
+        <li><b>Un club ou un coach que tu as accepté</b>, en lecture seule, sans rien pouvoir modifier. Si tu es licencié au club, <b>tous les coachs de son académie</b> te voient (sélection, équipes de l'AS) ; un coach d'un autre club ne te voit <b>que lui-même</b>. Tu peux retirer cet accès à tout moment dans « Mon profil ».</li>
+        <li><b>L'administrateur</b>, pour gérer les comptes (invitations, rôles, rattachements, correction d'une licence).</li>
+        <li>Une personne à qui l'administrateur a donné un <b>lien de démonstration</b> d'un compte, avec l'accord de son titulaire (lecture seule, révocable).</li>
+        <li>Personne d'autre : la base applique ces règles elle-même (sécurité ligne à ligne).</li>
+      </ul>
+
+      <h3>Les moins de 18 ans</h3>
+      <p>Le compte d'un joueur mineur est <b>celui de son parent</b> (son e-mail). Le parent valide d'abord qu'il en est responsable ; c'est lui qui accepte ou refuse les coachs.</p>
+
+      <h3>Où sont les données, avec quels prestataires</h3>
+      <table class="rgpd-t"><thead><tr><th>Prestataire</th><th>Rôle</th><th>Lieu</th></tr></thead><tbody>
+        <tr><td>Supabase</td><td>comptes et base de données</td><td>Union européenne (Paris)</td></tr>
+        <tr><td>Brevo</td><td>envoi des e-mails (invitation, connexion, rappels)</td><td>France / UE</td></tr>
+        <tr><td>GitHub (Microsoft)</td><td>héberge la page (sans aucune donnée) ; ses robots (GitHub Actions) relèvent le Mérite et les résultats des comptes et les écrivent dans la base, sans les conserver</td><td>États-Unis possible</td></tr>
+        <tr><td>Esri, cdnjs, jsDelivr</td><td>fonds de carte et bibliothèques de la page (reçoivent l'adresse IP du navigateur, comme tout site)</td><td>hors UE possible</td></tr>
+        <tr><td>api-adresse.data.gouv.fr, geo.api.gouv.fr</td><td>retrouver la commune d'un code postal (seul le code postal est envoyé)</td><td>France</td></tr>
+        <tr><td>ffgolf.org</td><td>source des données ; ton navigateur y lit la liste du Mérite quand tu cherches ta fiche</td><td>France</td></tr>
+      </tbody></table>
+
+      <h3>Dans ton navigateur</h3>
+      <p>Pas de cookie publicitaire ni de traceur. Le navigateur garde ta <b>session de connexion</b> et quelques <b>préférences d'affichage</b> (options cochées, totaux du Mérite du mois pour éviter de les retélécharger). Se déconnecter efface ta session et la copie locale de ta saison.</p>
+
+      <h3>Combien de temps</h3>
+      <p>Tant que ton compte existe. Les e-mails de rappel déjà envoyés et les relevés sont notés pour ne pas les refaire. <b>Pas encore de suppression automatique</b> des comptes inactifs.</p>
+
+      <h3>Tes droits</h3>
+      <p>Tu peux demander à <b>consulter</b>, <b>corriger</b>, <b>récupérer</b> ou <b>supprimer</b> tes données, et t'opposer à leur traitement, en écrivant à <a href="mailto:golfnexus@sportsdatabucket.fr">golfnexus@sportsdatabucket.fr</a>. La plupart se corrigent directement dans « Mon profil » ; ta licence, elle, est corrigée par l'administrateur. <b>La suppression de compte se fait pour l'instant sur demande</b> par e-mail (un bouton est prévu). Tu peux aussi saisir la CNIL (cnil.fr).</p>
+    </div>
+  </div>
   <footer class="pied">
-    <span id="maj"></span> · Source : ffgolf.org · Résultats historiques anonymisés (aucun nom de joueur).
+    <span id="maj"></span> · Source : ffgolf.org · Résultats historiques anonymisés (aucun nom de joueur) · <button type="button" class="lien" data-rgpd>Tes données personnelles</button>
   </footer>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -2044,6 +2124,11 @@ function blocResultat(e, ep) {
 }
 
 $("fiche-fermer").addEventListener("click", () => { $("fiche").hidden = true; fermerBulles(); });
+// page « Tes données personnelles » (RGPD, 06/11) : lisible avant même de se connecter (par-dessus l'accueil)
+const ouvrirRgpd = (oui = true) => { $("rgpd").hidden = !oui; if (oui) $("rgpd-fermer").focus(); };
+document.addEventListener("click", (e) => { if (e.target.closest("[data-rgpd]")) ouvrirRgpd(); else if (e.target.id === "rgpd" || e.target.id === "rgpd-fermer") ouvrirRgpd(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("rgpd").hidden) ouvrirRgpd(false); });
+if (new URLSearchParams(location.hash.slice(1)).get("v") === "rgpd") ouvrirRgpd();
 $("fiche").addEventListener("click", (e) => { if (e.target.id === "fiche") $("fiche").hidden = true; });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("fiche").hidden = true; });
 
