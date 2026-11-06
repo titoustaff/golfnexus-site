@@ -785,6 +785,10 @@ body.assistant-ouvert { overflow: hidden; }
 /* Mon Mérite : une section par Mérite (Jeunes, Adultes, Mid-Am, Seniors) — 06/11 */
 .p-merite-titre { margin: 14px 0 6px; font-size: 14px; color: var(--texte); }
 .p-merite-titre small { color: var(--doux); font-weight: 500; margin-left: 6px; }
+/* circuit d'un tournoi dans « Tous les tournois comptés » : jeunes et seniors repérables d'un coup d'œil (06/11) */
+.st-table .tag.circ-jeunes { background: #fff3c4; color: #6b4e00; border-color: #e8c24a; }
+.st-table .tag.circ-seniors, .st-table .tag.circ-mid { background: #e3eefc; color: #1f4b85; border-color: #9dbbe6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .st-table .tag.circ-jeunes { background: #4a3a05; color: #ffe08a; } :root:not([data-theme="light"]) .st-table .tag.circ-seniors, :root:not([data-theme="light"]) .st-table .tag.circ-mid { background: #16304f; color: #b9d3f5; } }
 
 </style>
 </head>
@@ -3145,8 +3149,8 @@ function rendreStats() {
 
   // tableau (vue tableau des données)
   if (T.length) h += blocSt("Tous les tournois comptés", `${T.length} tournois du ${LIBM} (ffgolf garde environ 12 mois glissants ; GolfNexus les conserve).${noteM}`, `
-    <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Circuit</th><th>Cat.</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
-    ${T.slice().reverse().map((t) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? CIRCUITS[circuitDe(x)] : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
+    <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Circuit · catégorie</th><th title="Catégorie Mérite du tournoi (0 à 10) : force du champ, calculée par la ffgolf">Cat. Mérite</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
+    ${T.slice().reverse().map((t) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? `<span class="tag circ-${circuitDe(x)}">${esc(circuitLib(x))}</span>` : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
     </tbody></table></div>`);
   // mise à jour à la demande (relevé immédiat, 1 fois par jour) ; dernière lecture du Mérite
   if (!Saison.demo) h += `<p class="meta st-maj">${der ? `Dernier relevé du ${LIBM} : ${moisLib(der.mois)}` : "Relevé"}${der?.lu_le ? ` (lu le ${fmtDate(String(der.lu_le).slice(0, 10))})` : ""}.
