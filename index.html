@@ -2455,6 +2455,12 @@ function meriteDe(t) {
   return L.find((m) => m.date >= t.debut && m.date <= t.fin && mots.some((w) => plier(m.nom).includes(w))) || null;
 }
 
+// l'inverse : ligne du Mérite → tournoi du calendrier collecté (même règle : date dans le tournoi + un mot du nom)
+function tournoiDuMerite(m) {
+  const mots = plier(m.nom).split(/[^a-z0-9]+/).filter((w) => w.length > 3 && !MOTS_VIDES.has(w));
+  return etat.tournois.find((x) => m.date >= x.debut && m.date <= x.fin && mots.some((w) => plier(x.nom).includes(w))) || null;
+}
+
 // carte de la saison : pastilles numérotées dans l'ordre, couleur du statut
 let sCarte, sCouche;
 const enMetropole = (p) => p.lat > 41 && p.lat < 51.5 && p.lon > -5.5 && p.lon < 10;
@@ -2984,29 +2990,35 @@ function rendreStats() {
   const il12 = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
   // tournois relevés de CE circuit (place / champ, trou par trou)
   const R = R0.filter((r) => circuitDe(r.t) === st.circuit);
-  // tournois joués servant aux places et à l'activité : ceux relevés du circuit, sinon ceux comptés au Mérite du circuit
-  const J = R.length ? R.map((r) => ({ date: r.t.debut, nom: r.t.nom, place: r.place, tours: r.tours || [] })) : T;
-  const J12 = J.filter((t) => t.date >= il12), source = R.length ? `tournois ${LIB} relevés` : `tournois comptés au ${LIBM}`;
+  // TOURNOIS DE CE CIRCUIT (06/11 : dans un onglet, tous les blocs ne parlent que du circuit) :
+  //  - relevés par la licence (circuit connu) ;
+  //  - comptés à n'importe quel Mérite et retrouvés dans le calendrier collecté avec ce circuit ;
+  //  - comptés au Mérite de ce circuit mais introuvables dans le calendrier (circuit inconnu : on fait confiance au Mérite).
+  // Un même tournoi présent dans deux Mérites (ex. GP adulte au Mérite Jeunes et Adultes) n'est compté qu'une fois.
+  const cleM = (m) => m.date + "|" + plier(m.nom), vus = new Set(), J = [];
+  for (const r of R) {
+    const m = meriteDe(r.t); if (m) for (const x of S.tournois) if (x.date === m.date && plier(x.nom) === plier(m.nom)) vus.add(cleM(x));
+    J.push({ date: r.t.debut, nom: r.t.nom, place: r.place, tours: r.tours || [], m, r });
+  }
+  for (const m of [...S.tournois].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (vus.has(cleM(m))) continue;
+    const t = tournoiDuMerite(m);
+    if (t ? circuitDe(t) !== st.circuit : m.liste !== st.liste) continue;
+    vus.add(cleM(m));
+    J.push({ date: m.date, nom: m.nom, place: m.place, tours: m.tours || [], m });
+  }
+  J.sort((a, b) => a.date.localeCompare(b.date));
+  const J12 = J.filter((t) => t.date >= il12), source = `tournois ${LIB}`;
 
   // ---- tours vs SSS. Priorité à la donnée ffgolf : « Moy.SSS » du tournoi dans la fiche Mérite (SSS réel du jour ;
   // SSS = moyenne des tours − Moy.SSS). Notre SSS (repère de compétition) seulement pour un tournoi absent du Mérite.
-  const tours = [], vus = new Set(), cleM = (m) => m.date + "|" + m.nom;
-  const sx = f.sexe === "D" ? "D" : "H";
+  const tours = [], sx = f.sexe === "D" ? "D" : "H";
   const ajouterTours = (sc, sss, date, nom, src) => sc.forEach((x, i) => x > 0 && tours.push({ date, nom, n: i + 1, d: x - sss, score: x, src }));
-  // 1. tournois relevés de ce circuit (on connaît leur circuit)
-  for (const r of R) {
-    const m = meriteDe(r.t);
-    if (m?.tours?.length && m.moy_sss != null) { vus.add(cleM(m)); ajouterTours(m.tours, moyenne(m.tours) - m.moy_sss, r.t.debut, r.t.nom, "ffgolf"); continue; }
-    const g = golfDe(r.t), pc = g && parcoursJoue(g, r.parcours), rp = pc && repereCompet(pc, sx, r.t), sss = rp && (sx === "D" ? rp.sss_d : rp.sss_h);
-    if (sss && r.tours?.length) ajouterTours(r.tours, sss, r.t.debut, r.t.nom, "repère");
-  }
-  // 2. tournois du Mérite de ce circuit non relevés : gardés s'ils sont de ce circuit (ou d'un circuit inconnu)
-  for (const m of T) {
-    if (vus.has(cleM(m)) || !m.tours?.length || m.moy_sss == null) continue;
-    const mots = plier(m.nom).split(/[^a-z0-9]+/).filter((w) => w.length > 3 && !MOTS_VIDES.has(w));
-    const t = etat.tournois.find((x) => m.date >= x.debut && m.date <= x.fin && mots.some((w) => plier(x.nom).includes(w)));
-    if (t && circuitDe(t) !== st.circuit) continue;
-    ajouterTours(m.tours, moyenne(m.tours) - m.moy_sss, m.date, m.nom, "ffgolf");
+  for (const j of J) {
+    if (j.m?.tours?.length && j.m.moy_sss != null) { ajouterTours(j.m.tours, moyenne(j.m.tours) - j.m.moy_sss, j.date, j.nom, "ffgolf"); continue; }
+    if (!j.r) continue;
+    const g = golfDe(j.r.t), pc = g && parcoursJoue(g, j.r.parcours), rp = pc && repereCompet(pc, sx, j.r.t), sss = rp && (sx === "D" ? rp.sss_d : rp.sss_h);
+    if (sss && j.tours.length) ajouterTours(j.tours, sss, j.date, j.nom, "repère");
   }
   tours.sort((a, b) => a.date.localeCompare(b.date) || a.n - b.n);
   const tours12 = tours.filter((x) => x.date >= il12), ds12 = tours12.map((x) => x.d);
@@ -3029,7 +3041,9 @@ function rendreStats() {
   // 4. Mérite mois par mois (petits multiples : une mesure par graphique, jamais deux échelles)
   const pts = (k, fmt) => M.map((m) => ({ x: moisLib(m.mois), y: m[k] == null ? null : +m[k], tip: m[k] == null ? null : fmt(+m[k]) }));
   if (!M.length) h += blocSt(LIBM, "", `<p class="meta">Pas de fiche au ${LIBM} : ses tournois ${LIB} sont bien pris en compte ci-dessous (places, tour par tour, trou par trou), mais il n'y a ni place ni points au Mérite à suivre pour ce circuit.</p>`);
-  else h += blocSt(`${LIBM} mois par mois`, "Relevé chaque mois depuis décembre 2024 : progresse-t-il ou recule-t-il ?", `
+  const autresCircuits = T.some((m) => { const t = tournoiDuMerite(m); return t && circuitDe(t) !== st.circuit; });
+  const noteM = autresCircuits ? ` Calcul de la ffgolf : ce Mérite compte aussi des tournois d'autres circuits${st.liste === "jeunes" ? " (tes Grands Prix adultes)" : ""}.` : "";
+  if (M.length) h += blocSt(`${LIBM} mois par mois`, "Relevé chaque mois depuis décembre 2024 : progresse-t-il ou recule-t-il ?" + noteM, `
     <div class="st-multi">
       <div><h4>Place au Mérite <small>(plus bas = mieux)</small></h4>${svgLignes({ series: [{ nom: "Place", cls: "c1", pts: pts("place", (v) => fx(v, 0) + "e") }], fmt: (v) => fx(v, 0), W: st.l2 })}</div>
       <div><h4>Moyenne par rapport au SSS <small>(vers le bas = mieux)</small></h4>
@@ -3130,9 +3144,9 @@ function rendreStats() {
     </ul>`);
 
   // tableau (vue tableau des données)
-  if (T.length) h += blocSt("Tous les tournois comptés", `${T.length} tournois du ${LIBM} (ffgolf garde environ 12 mois glissants ; GolfNexus les conserve).`, `
-    <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Cat.</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
-    ${T.slice().reverse().map((t) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
+  if (T.length) h += blocSt("Tous les tournois comptés", `${T.length} tournois du ${LIBM} (ffgolf garde environ 12 mois glissants ; GolfNexus les conserve).${noteM}`, `
+    <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Circuit</th><th>Cat.</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
+    ${T.slice().reverse().map((t) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? CIRCUITS[circuitDe(x)] : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
     </tbody></table></div>`);
   // mise à jour à la demande (relevé immédiat, 1 fois par jour) ; dernière lecture du Mérite
   if (!Saison.demo) h += `<p class="meta st-maj">${der ? `Dernier relevé du ${LIBM} : ${moisLib(der.mois)}` : "Relevé"}${der?.lu_le ? ` (lu le ${fmtDate(String(der.lu_le).slice(0, 10))})` : ""}.
