@@ -877,6 +877,25 @@ body.assistant-ouvert { overflow: hidden; }
   .cs-demi .cs-s { width: 20px; height: 20px; }
   .cs-tours { font-size: 12px; } .cs-tours th, .cs-tours td { padding: 6px 5px; }
 }
+/* bilan du tournoi dans la carte de score (06/11) */
+.st-seg .r-eag, .cs-comptes i.r-eag { background: #0e4f2b; }
+.cs-bilan { background: var(--carte); box-shadow: var(--ombre); border-radius: 10px; padding: 12px 14px; }
+.cs-seg { height: 18px; margin: 0 0 12px; }
+.cs-comptes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.cs-comptes div { display: grid; grid-template-columns: 12px 1fr; column-gap: 7px; align-items: baseline; }
+.cs-comptes i { width: 12px; height: 12px; border-radius: 3px; grid-row: span 3; align-self: start; margin-top: 5px; }
+.cs-comptes i.r-bir { background: var(--st-bir); } .cs-comptes i.r-par { background: var(--st-par); } .cs-comptes i.r-bog { background: var(--st-bog); } .cs-comptes i.r-dbl { background: var(--st-dbl); }
+.cs-comptes b { font-size: 20px; color: var(--vert); line-height: 1.1; }
+.cs-comptes span { font-size: 12px; font-weight: 600; color: var(--texte); }
+.cs-comptes small, .cs-partype small { font-size: 11px; color: var(--doux); }
+.cs-partype { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--bord); }
+.cs-partype div { display: flex; flex-direction: column; }
+.cs-partype span { font-size: 12px; font-weight: 600; color: var(--doux); }
+.cs-partype b { font-size: 18px; color: var(--texte); } .cs-partype b.mieux { color: var(--vert-2); } .cs-partype b.moins { color: #b45309; }
+.fiche h3 small { font-weight: 500; margin-left: 6px; }
+@media (max-width: 640px) { .cs-comptes { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; } }
+.st-tours { white-space: nowrap; }
+.st-tours .st-carte-btn { width: 24px; height: 24px; margin-left: 6px; vertical-align: middle; }
 
 </style>
 </head>
@@ -3247,9 +3266,9 @@ function rendreStats() {
 
   // tableau (vue tableau des données)
   if (T.length) h += blocSt("Tous les tournois comptés", `${T.length} tournois du ${LIBM} (ffgolf garde environ 12 mois glissants ; GolfNexus les conserve).${noteM}`, `
-    <div class="st-table"><table><thead><tr><th class="st-col-carte"><span class="sr">Carte de score</span></th><th>Date</th><th>Compétition</th><th>Circuit · catégorie</th><th title="Catégorie Mérite du tournoi (0 à 10) : force du champ, calculée par la ffgolf">Cat. Mérite</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
-    ${(st.lignesT = T.slice().reverse()).map((t, i) => `<tr><td class="st-col-carte">${t.tours?.length ? `<button type="button" class="st-carte-btn${scoreDe(t)?.trous ? " detail" : ""}" data-carte="${i}"
-      title="${scoreDe(t)?.trous ? "Ma carte de score : trou par trou et tour par tour" : "Mes tours sur ce tournoi"}" aria-label="Voir mes scores : ${esc(titre(t.nom))}">${ICONE_CARTE}</button>` : ""}</td><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? `<span class="tag circ-${circuitDe(x)}">${esc(circuitLib(x))}</span>` : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td>${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
+    <div class="st-table"><table><thead><tr><th>Date</th><th>Compétition</th><th>Circuit · catégorie</th><th title="Catégorie Mérite du tournoi (0 à 10) : force du champ, calculée par la ffgolf">Cat. Mérite</th><th>Place</th><th>Tours</th><th>vs SSS</th><th>Points</th></tr></thead><tbody>
+    ${(st.lignesT = T.slice().reverse()).map((t, i) => `<tr><td>${fmtDate(t.date)}</td><td>${esc(titre(t.nom))}</td><td>${(() => { const x = tournoiDuMerite(t); return x ? `<span class="tag circ-${circuitDe(x)}">${esc(circuitLib(x))}</span>` : "—"; })()}</td><td>${esc(t.cat || "")}</td><td>${esc(t.place || "—")}</td><td class="st-tours">${(t.tours || []).join(" · ") || (/match|foursome/i.test(t.nom + " " + (t.formule || "")) ? "<span class='meta'>match-play</span>" : "")}${t.tours?.length ? ` <button type="button" class="st-carte-btn${scoreDe(t)?.trous ? " detail" : ""}" data-carte="${i}"
+      title="${scoreDe(t)?.trous ? "Ma carte de score : trou par trou et tour par tour" : "Mes tours sur ce tournoi"}" aria-label="Voir mes scores : ${esc(titre(t.nom))}">${ICONE_CARTE}</button>` : ""}</td><td>${t.tours?.length ? sg(t.moy_sss, 2) : "—"}</td><td>${t.div === 0 ? `<span title="ne compte pas dans le diviseur">${fx(t.points, 2)}*</span>` : fx(t.points, 2)}</td></tr>`).join("")}
     </tbody></table></div>`);
   // mise à jour à la demande (relevé immédiat, 1 fois par jour) ; dernière lecture du Mérite
   if (!Saison.demo) h += `<p class="meta st-maj">${der ? `Dernier relevé du ${LIBM} : ${moisLib(der.mois)}` : "Relevé"}${der?.lu_le ? ` (lu le ${fmtDate(String(der.lu_le).slice(0, 10))})` : ""}.
@@ -3290,6 +3309,21 @@ function carteScore(m) {
       return `<tr><th>Tour ${k + 1}</th><td class="n"><b>${x}</b></td><td class="n">${pk ? sg(x - pk, 0) : "—"}</td><td class="n">${sss ? sg(x - sss, 1) : "—"}</td>
       ${trous.length ? `<td class="n">${neuf(k, 0) ?? "—"}</td><td class="n">${neuf(k, 9) ?? "—"}</td><td class="n">${trous[k] ? c.eag + c.bir : "—"}</td><td class="n">${trous[k] ? c.par : "—"}</td><td class="n">${trous[k] ? c.bog : "—"}</td><td class="n">${trous[k] ? c.dbl : "—"}</td>` : ""}</tr>`; }).join("")}
     </tbody></table></div>`;
+  // bilan du tournoi (comme le « Trou par trou » de Mes stats) : répartition des scores et moyenne par type de trou
+  if (trous.some(Boolean)) {
+    const tot = { eag: 0, bir: 0, par: 0, bog: 0, dbl: 0 }, parType = { 3: [], 4: [], 5: [] };
+    trous.forEach((sk, k) => (sk || []).forEach((x, i) => { const p = pars[k]?.[i]; const c = cls(x, p); if (!c) return; tot[c]++; if (parType[p]) parType[p].push(x - p); }));
+    const n = Object.values(tot).reduce((a, b) => a + b, 0), nbT = n / 18;
+    const cats = [["eag", "eagle ou mieux", "r-eag"], ["bir", "birdie", "r-bir"], ["par", "par", "r-par"], ["bog", "bogey", "r-bog"], ["dbl", "double ou +", "r-dbl"]];
+    const pct = (v) => Math.round((100 * v) / n);
+    h += `<h3>Bilan du tournoi <small class="meta">${n} trous joués</small></h3>
+      <div class="cs-bilan">
+        <div class="st-seg cs-seg" role="img" aria-label="${cats.map(([c, l]) => `${l} ${tot[c]}`).join(", ")}">${cats.filter(([c]) => tot[c]).map(([c, l, r]) => `<span class="${r}" style="flex:${tot[c]}" title="${l} : ${tot[c]} (${pct(tot[c])} %)"></span>`).join("")}</div>
+        <div class="cs-comptes">${cats.map(([c, l, r]) => `<div><i class="${r}"></i><b>${tot[c]}</b><span>${l}${tot[c] > 1 && c !== "dbl" ? "s" : ""}</span><small>${pct(tot[c])} % · ${fx(tot[c] / nbT, 1)} / tour</small></div>`).join("")}</div>
+        <div class="cs-partype">${[3, 4, 5].filter((p) => parType[p].length).map((p) => { const m = moyenne(parType[p]);
+          return `<div><span>Par ${p}</span><b class="${m <= 0 ? "mieux" : m > 0.6 ? "moins" : ""}">${sg(m, 2)}</b><small>par trou · ${parType[p].length} trous</small></div>`; }).join("")}</div>
+      </div>`;
+  }
   // carte de score
   if (trous.some(Boolean)) {
     const ligne = (k) => { const s = trous[k] || [], p = pars[k] || [];
