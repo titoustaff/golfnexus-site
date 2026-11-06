@@ -1100,7 +1100,7 @@ body.assistant-ouvert { overflow: hidden; }
     <div class="s-tete"><h2 id="ad-titre">Administration</h2></div>
     <form class="bloc" id="ad-form" autocomplete="off">
       <h3>Inviter quelqu'un</h3>
-      <p class="meta">La personne reçoit un e-mail GolfNexus avec un lien (1 heure, une seule fois) ; elle choisit ensuite son mot de passe. La licence d'un joueur est fixée ici : il ne pourra pas la changer (seul l'administrateur la corrige).</p>
+      <p class="meta">La personne reçoit un e-mail GolfNexus avec un lien (24 heures, une seule fois) ; elle choisit ensuite son mot de passe. La licence d'un joueur est fixée ici : il ne pourra pas la changer (seul l'administrateur la corrige).</p>
       <div class="ad-champs">
         <label>E-mail <input id="ad-email" type="email" required placeholder="prenom.nom@exemple.fr"></label>
         <label>Nom affiché <input id="ad-nom" type="text" maxlength="60" placeholder="ex. Léo Martin"></label>
@@ -2282,7 +2282,7 @@ $("s-annees").addEventListener("click", (e) => {
 const compte = { envoye: null, ouvert: false, parLien: false, mdp: false, email: "" };
 // Compte en haut à droite, les onglets juste en dessous (choix utilisateur du 04/11, après l'essai « menu dans le nom »).
 // Connecté : initiale + nom ▾ (adresse, se déconnecter) ; sinon « Se connecter » (formulaire). « Mon profil » : onglet visible connecté seulement.
-const LIEN_REGLES = "Le lien est <b>à usage unique</b>, valable <b>1 heure</b>, et ne fonctionne que <b>dans ce navigateur</b> (celui où tu l'as demandé).";
+const LIEN_REGLES = "Le lien est <b>à usage unique</b>, valable <b>24 heures</b>, et ne fonctionne que <b>dans ce navigateur</b> (celui où tu l'as demandé).";
 function rendreCompte() {
   const b = $("b-compte"), pan = $("b-pan"), c = $("s-compte"), connecte = Saison.mode === "compte" && !!sb;
   $("v-profil").hidden = !connecte; $("v-stats").hidden = !connecte || coachSeul();
@@ -3006,7 +3006,7 @@ document.addEventListener("click", (e) => { if (e.target.closest("[data-ecran-pr
 // Données du joueur seulement : historique Mérite mensuel + tournois comptés (merite_mois / merite_tournois),
 // places obtenues et trou par trou des GP (resultats_perso). Graphiques en SVG maison : traits 2 px, marqueurs
 // ≥ 8 px avec anneau, grille fine, info-bulle au survol, couleurs validées (clair et sombre, daltonisme).
-const st = { circuit: null, liste: null };
+const st = { circuit: null, liste: null, toutHisto: true };   // « Tout l'historique » coché par défaut (06/11)
 const moyenne = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 const ecartType = (a) => { const m = moyenne(a); return a.length > 1 ? Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)) : null; };
 const fx = (x, d = 1) => (x == null || isNaN(x) ? "—" : x.toLocaleString("fr-FR", { maximumFractionDigits: d, minimumFractionDigits: 0 }));
@@ -3499,7 +3499,7 @@ $("a-lien").addEventListener("click", async () => {
   const email = $("a-email").value.trim().toLowerCase();
   if (!email) { $("a-email").focus(); msgAccueil("Saisis d'abord ton e-mail.", true); return; }
   const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-  if (!error) { msgAccueil(`Lien envoyé à ${email} : ouvre-le dans ce navigateur (valable 1 heure, une seule fois).`); return; }
+  if (!error) { msgAccueil(`Lien envoyé à ${email} : ouvre-le dans ce navigateur (valable 24 heures, une seule fois).`); return; }
   msgAccueil(/security purposes/i.test(error.message) ? "Un lien vient déjà d'être envoyé : regarde ta boîte (et les spams)."
     : /signups not allowed|not found|otp_disabled/i.test(error.message) ? "Cette adresse n'est pas invitée." : "Envoi impossible : " + error.message, true);
 });
